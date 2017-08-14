@@ -11683,20 +11683,23 @@ def main(args):
 				findFILECOMPARISON(modulecriteria,criteria,allfiles,tomatch,checkstrict,rangeval,fast)
 			else:
 				dbg.log("Please specify at least 2 filenames to compare",highlight=1)
-
-		# ----- Find bytes in memory ----- #
-		def procFind(args):
-			modulecriteria={}
-			criteria={}
+			
+		# ----- Parses "find" commands arguments ----- #
+		def parseFindArgs(args):
+			modulecriteria = {}
+			criteria = {}
 			pattern = ""
 			base = 0
 			offset = 0
-			top  = TOP_USERLAND
+			top = TOP_USERLAND
 			consecutive = False
 			ftype = ""
-			
 			level = 0
-			offsetlevel = 0			
+			offsetlevel = 0
+			ptronly = False
+			rangep2p = 0
+			
+			# ----- Starts parsing ----- #
 			
 			if not "a" in args:
 				args["a"] = "*"
@@ -11781,7 +11784,6 @@ def main(args):
 						return
 			rangep2p = 0
 
-			
 			if "p2p" in args or level > 0:
 				dbg.log("    - Looking for pointers to pointers")
 				criteria["p2p"] = True
@@ -11795,12 +11797,27 @@ def main(args):
 				if "p2p" in args:
 					level = 1
 			
-			
 			if level > 0:
 				dbg.log("    - Recursive levels : %d" % level)
 			
-			dbg.log("------>" + str(offset))
-			dbg.log("------>" + str(offsetlevel))
+			return modulecriteria, criteria, pattern, base, offset, top, consecutive, ftype, level, offsetlevel, ptronly, rangep2p
+
+		# ----- Find bytes in memory ----- #
+		def procFind(args):
+			modulecriteria = {}
+			criteria = {}
+			pattern = ""
+			base = 0
+			offset = 0
+			top = TOP_USERLAND
+			consecutive = False
+			ftype = ""
+			level = 0
+			offsetlevel = 0
+			ptronly = False
+			rangep2p = 0
+			
+			modulecriteria, criteria, pattern, base, offset, top, consecutive, ftype, level, offsetlevel, ptronly, rangep2p = parseFindArgs(args)
 				
 			allpointers = findPattern(modulecriteria,criteria,pattern,ftype,base,top,consecutive,rangep2p,level,offset,offsetlevel)
 				
@@ -11809,6 +11826,7 @@ def main(args):
 			processResults(allpointers,logfile,thislog,{},ptronly)
 			return
 			
+		# ---- Finds all CALL opcodes ---- #
 		def findCallOpcodes():
 			# ModR/M Reg fields.
 			ff1 = 0b00010000
@@ -11822,28 +11840,32 @@ def main(args):
 							
 			return callop
 			
-		# ---- Find instructions, wildcard search ----- #
-		def procFindCall():
-			dbg.log("FIND CALL COMMAND")
-			
+		# ---- Find CALL instructions ----- #
+		def procFindCall(args):
 			# Call Opcodes
 			callops = findCallOpcodes()		
 	
 			# Build arguments for findPattern function
 			modulecriteria = {}
-			criteria = {"accesslevel": "X"}
-			ftype = "bin"
+			criteria = {}
+			pattern = ""
 			base = 0
+			offset = 0
 			top = TOP_USERLAND
 			consecutive = False
-			rangep2p = 0
+			ftype = ""
 			level = 0
-			offset = 0
 			offsetlevel = 0
 			ptronly = False
+			rangep2p = 0
+			args["s"] = ""
+			
+			modulecriteria, criteria, pattern, base, offset, top, consecutive, ftype, level, offsetlevel, ptronly, rangep2p = parseFindArgs(args)
+			
+			ftype = "bin"
 			
 			# Set log file and search for all opcodes
-			logfile = MnLog("find.txt")
+			logfile = MnLog("findcall.txt")
 			thislog = logfile.reset()
 			
 			for opcode in callops:
@@ -18296,10 +18318,13 @@ Accepted syntax includes:
 		diffheapUsage = """Compare current heap layout with previously saved state
 Arguments:
     -save     : save current state to disk 
-    -diff     : compare current state with previously saved state""" 
+    -diff     : compare current state with previously saved state"""
+	
+		findCallUsage = """Finds all instructions in memory with CALL opcodes
+Arguments:
+    - Same as the \"find\" command, except for -type and -s, which cannot be used."""
 
-		commands["findcall"]		= MnCommand("findcall", "", "", procFindCall)
-
+		commands["findcall"]		= MnCommand("findcall", "Finds all instructions in memory with CALL opcodes", findCallUsage, procFindCall)
 		commands["seh"] 			= MnCommand("seh", "Find pointers to assist with SEH overwrite exploits",sehUsage, procFindSEH)
 		commands["config"] 			= MnCommand("config","Manage configuration file (mona.ini)",configUsage,procConfig,"conf")
 		commands["jmp"]				= MnCommand("jmp","Find pointers that will allow you to jump to a register",jmpUsage,procFindJMP, "j")
@@ -18426,8 +18451,6 @@ Arguments:
 		if command in commands:
 			if command.lower().strip() == "help":
 				commands[command].parseProc(args)
-			elif command.lower().strip() == "findcall":
-				commands[command].parseProc()
 			else:
 				commands[command].parseProc(opts)
 		
