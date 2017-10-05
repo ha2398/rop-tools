@@ -108,9 +108,9 @@ VOID Fini(INT32 code, VOID *v) { // TODO
 int main(int argc, char *argv[])
 {
     // Gets the input file name from the command line (-i flag).
-    //KNOB<string> inFileKnob(KNOB_MODE_WRITEONCE, "pintool", "i", \
-    //    "call.txt", "Input file name -- this file must contain the list of" \
-    //    "addresses in memory that contain CALL instructions");
+    KNOB<string> inFileKnob(KNOB_MODE_WRITEONCE, "pintool", "i",
+        "call.txt", "Input file name -- this file must contain the list of"
+        "addresses in memory that contain CALL instructions");
 
     // Gets the output file name from the command line (-o flag).
     //KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \

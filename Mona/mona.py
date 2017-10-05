@@ -11842,6 +11842,8 @@ def main(args):
 			
 		# ---- Find CALL instructions ----- #
 		def procFindCall(args):
+			global silent
+			
 			# Call Opcodes
 			callops = findCallOpcodes()		
 	
@@ -11869,11 +11871,81 @@ def main(args):
 			thislog = logfile.reset()
 			
 			for opcode in callops:
-				pattern = opcode
-				allpointers = findPattern(modulecriteria,criteria,pattern,ftype,base,top,consecutive,rangep2p,level,offset,offsetlevel)
-				processResults(allpointers,logfile,thislog,{},ptronly)
-			
-			return
+				all_opcodes = findPattern(modulecriteria,criteria,opcode,ftype,base,top,consecutive,rangep2p,level,offset,offsetlevel)
+				
+				#Process Results
+				ptrcnt = 0
+				cnt = 0
+				
+				if all_opcodes:
+					dbg.log("[+] Writing results to %s" % thislog)
+					
+					for hf in all_opcodes:
+						if not silent:
+							try:
+								dbg.log("    - Number of pointers of type '%s' : %d " % (hf,len(all_opcodes[hf])))
+							except:
+								dbg.log("    - Number of pointers of type '<unable to display>' : %d " % (len(all_opcodes[hf])))
+								
+					if not ptronly:
+						if not silent:
+							dbg.log("[+] Results : ")
+						messageshown = False
+						for optext,pointers in all_opcodes.iteritems():
+							for ptr in pointers:
+								op = dbg.disasm(ptr)
+								dump = op.getDump().replace(' ', '')
+							
+								ptrinfo = ""
+								modinfo = ""
+								ptrx = MnPointer(ptr)
+								modname = ptrx.belongsTo()
+								if not modname == "":
+									modobj = MnModule(modname)
+									ptrextra = ""
+									rva=0
+									if (modobj.isRebase or modobj.isAslr):
+										rva = ptr - modobj.moduleBase
+										ptrextra = " (b+0x" + toHex(rva)+") "
+									ptrinfo = "0x" + toHex(ptr) + ptrextra + " : " + dump + " | " + ptrx.__str__()  + " " + modobj.__str__()
+								else:
+									ptrinfo = "0x" + toHex(ptr) + " : " + dump + " | " + ptrx.__str__() 
+									if ptrx.isOnStack():
+										ptrinfo += " [Stack] "
+									elif ptrx.isInHeap():
+										ptrinfo += " [Heap] "
+								logfile.write(ptrinfo,thislog)
+								if (ptr_to_get > -1) or (cnt < 20):
+									if not silent:
+										dbg.log("  %s" % ptrinfo,address=ptr)
+									cnt += 1
+								ptrcnt += 1
+								if (ptr_to_get == -1 or ptr_to_get > 20) and cnt == 20 and not silent and not messageshown:
+									dbg.log("... Please wait while I'm processing all remaining results and writing everything to file...")
+									messageshown = True
+						if cnt < ptrcnt:
+							if not silent:
+								dbg.log("[+] Done. Only the first %d pointers are shown here. For more pointers, open %s..." % (cnt,thislog)) 
+					else:
+						allptr = []
+						ptrcnt = 0
+						ptrinfo = ""
+						dbg.log("... Please wait while I'm processing results and writing everything to file...")
+						for optext,pointers in all_opcodes.iteritems():
+							for ptr in pointers:
+								if not ptr in allptr:
+									op = dbg.disasm(ptr)
+									dump = op.getDump().replace(' ', '')
+									
+									ptrinfo += "0x" + toHex(ptr) + " : " + dump + "\n"
+									ptrcnt += 1
+						if not silent:
+							dbg.log("[+] Writing results to file")
+						logfile.write(ptrinfo,thislog)
+						if not silent:
+							dbg.log("[+] Done")
+				dbg.log("    Found a total of %d pointers" % ptrcnt, highlight=1)
+				dbg.setStatusBar("Done. Found %d pointers" % ptrcnt)
 			
 		# ---- Find instructions, wildcard search ----- #
 		def procFindWild(args):

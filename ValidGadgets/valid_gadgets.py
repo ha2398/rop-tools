@@ -32,7 +32,7 @@ CALL_SIZES = {'E8': [3, 5], '9A': [5, 7], 'FF': range(2, 7)}
 MIN_CALL_SIZE = 2
 MAX_CALL_SIZE = 7
 
-ADR_BASE = 16
+addr_BASE = 16
 
 # Functions
 
@@ -76,16 +76,16 @@ def get_gadgets(gadgets_file):
 		@return: The list containing the gadgets' addresses. '''
 	trim_rop_list(gadgets_file)
 	
-	gadgets_adr = []
+	gadgets_addr = []
 
 	next_gadget = gadgets_file.readline()
 	while (next_gadget != ''):
 		if ' : ' in next_gadget:
-			gadgets_adr.append(next_gadget.split()[0])
+			gadgets_addr.append(next_gadget.split()[0])
 		
 		next_gadget = gadgets_file.readline()
 
-	return gadgets_adr
+	return gadgets_addr
 
 def trim_call_list(calls_file):
 	''' Place the file pointer at the beginning of the actual call list on the
@@ -110,7 +110,7 @@ def get_calls(calls_file):
 		@return: The set of call instruction addresses. '''
 	trim_call_list(calls_file)
 
-	calls_adr = {}
+	calls_addr = {}
 
 	next_call = calls_file.readline()
 	while (next_call != ''):
@@ -121,37 +121,37 @@ def get_calls(calls_file):
 			if 'FF' in opcode:
 				opcode = opcode[:2]
 
-			calls_adr[address] = opcode
+			calls_addr[address] = opcode
 		
 		next_call = calls_file.readline()
 
-	return calls_adr
+	return calls_addr
 
-def is_preceded_by_call(address, calls_adr):
+def is_preceded_by_call(address, calls_addr):
 	''' Checks if a given gadget is preceded by a call instruction.
 		@address: Hexademical address of the gadget.
-		@calls_adr: Collection with all call instructions addresses.
+		@calls_addr: Collection with all call instructions addresses.
 		@return: True if the gadget is preceded by call and False otherwise.
 		'''
 	''' Hence, for each gadget, we need to check 6 addresses, the ones
 		obtained by	subtracting x bytes from the gadget address, where x is an 
 		integer in from 2 to 7, inclusive. '''
 	for offset in range(MIN_CALL_SIZE, MIN_CALL_SIZE+1):
-		candidate = hex(int(address, ADR_BASE) - offset)
-		if candidate in calls_adr:
-			call_opcode = calls_adr[candidate]
+		candidate = hex(int(address, addr_BASE) - offset)
+		if candidate in calls_addr:
+			call_opcode = calls_addr[candidate]
 			if offset in CALL_SIZES[call_opcode]:
 				return True
 
 	return False
 
-def filter_call_gadgets(gadgets_adr, calls_adr):
+def filter_call_gadgets(gadgets_addr, calls_addr):
 	''' Filters gadgets preceded by call instructions. 
-		@gadgets_adr: Collection with gadgets' addresses.
-		@calls_adr: Collection with call instructions' addresses.
+		@gadgets_addr: Collection with gadgets' addresses.
+		@calls_addr: Collection with call instructions' addresses.
 		@return: A list of gadgets preceded by call instructions. '''
-	call_gadgets = filter(lambda x: is_preceded_by_call(x, calls_adr), \
-		gadgets_adr)
+	call_gadgets = filter(lambda x: is_preceded_by_call(x, calls_addr), \
+		gadgets_addr)
 
 	return call_gadgets
 
@@ -160,12 +160,18 @@ def main():
 	check_args()
 	gadgets_file, calls_file = open_files(sys.argv[ROP_ARG], sys.argv[CALL_ARG])
 
-	gadgets_adr = get_gadgets(gadgets_file)
-	calls_adr = get_calls(calls_file)
-	call_gadgets = filter_call_gadgets(gadgets_adr, calls_adr)
+	gadgets_addr = get_gadgets(gadgets_file)
 
-	print('Number of gadgets: ' + str(len(gadgets_adr)))
-	print('Number of calls: ' + str(len(calls_adr)))
+	calls_addr = get_calls(calls_file)
+	addr_file = open('addr.out', 'w')
+	for addr in calls_addr:
+		addr_file.write(addr + '\n')
+	addr_file.close()
+
+	call_gadgets = filter_call_gadgets(gadgets_addr, calls_addr)
+
+	print('Number of gadgets: ' + str(len(gadgets_addr)))
+	print('Number of calls: ' + str(len(calls_addr)))
 	print('Number of gadgets preceded by calls: ' + str(len(call_gadgets)))
 
 	gadgets_file.close()
