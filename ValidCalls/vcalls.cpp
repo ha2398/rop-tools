@@ -10,18 +10,25 @@
 #include <iostream>
 #include <fstream>
 #include <set>
+#include <string>
+#include <sstream>
+#include <utility>
+
+typedef pair<string, string> Call;
+
+using namespace std;
 
 /**
  * Global Variables.
  */
-static std::ofstream outputFile;
-UINT64 callCount = 0;
+static ofstream outputFile;
+set<Call> calls;
 
 /**
  * Prints the correct usage of the pintool.
  */
 INT32 PrintUsage() {
-    cout << "\nUsage: pin -t <Pintool> [-o <OutputFileName> [-i"
+    cerr << "\nUsage: pin -t <Pintool> [-o <OutputFileName> [-i"
         " <InputFileName>] -- <Application>\n\n"
         "Options:\n"
         "\t-o\t<OutputFileName>\t"
@@ -39,27 +46,31 @@ INT32 PrintUsage() {
  *
  * @callListFileName: Input file name.
  * @return: A set that contains the memory locations of the CALL instructions
- * in the input file.
+ * in the input file and their hexadecimal dump.
  */
-set<string> readInputData(string callListFileName) {
-    ifstream callListFile(callListFileName.c_str());
-    set<string> callAddr;
+void readInputData(string callListFileName) {
+    ifstream callListFile;
+	callListFile.open(callListFileName.c_str());
+	
+	if (!callListFile) {
+		cerr << "[Error] Couldn't open call list file." << endl;
+		return;
+	}
 
     string line;
     while (getline(callListFile, line)) {
-        callAddr.insert(line);
-    }
-
+		istringstream iss(line);
+		string addr, dump;
+		
+		getline(iss, addr, ' ');
+		getline(iss, dump, ' ');
+		
+		Call newCall(addr, dump);
+		calls.insert(newCall);
+	}
+		
     callListFile.close();
-    return callAddr;
-}
-
-/**
- * Analysis function for CALL instructions.
- */
-VOID doCall(ADDRINT target) { // TODO
-    callCount++;
-    cout << "Target: " << target << endl;
+	return;
 }
 
 /**
@@ -68,7 +79,6 @@ VOID doCall(ADDRINT target) { // TODO
 VOID doRet() { // TODO
     
 }
-
 
 /**
  * For each trace in the application's execution flow, looks for CALLs and RETs,
@@ -83,15 +93,8 @@ VOID InstrumentCode(TRACE trace, VOID *v) { // TODO
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
         INS tail = BBL_InsTail(bbl);
 
-        if (INS_IsCall(tail)) { // Instruments CALLs
-            if (INS_IsDirectCall(tail)) { // Direct CALLs
-                const ADDRINT target = INS_DirectBranchOrCallTargetAddress(tail);
-                INS_InsertCall(tail, IPOINT_BEFORE, AFUNPTR(doCall),
-                    IARG_ADDRINT, target, IARG_END);
-            } else { // Indirect CALLs
-                INS_InsertCall(tail, IPOINT_BEFORE, AFUNPTR(doCall),
-                    IARG_BRANCH_TARGET_ADDR, IARG_END);
-            }
+        if (INS_IsRet(tail)) { // Instruments RETs
+            INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR)doRet, IARG_END);
         }	
     }
 }
@@ -101,7 +104,13 @@ VOID InstrumentCode(TRACE trace, VOID *v) { // TODO
  * end execution.
  */
 VOID Fini(INT32 code, VOID *v) { // TODO
-    cout << "Call count: " << callCount << endl;
+	set<Call> :: iterator it;
+	
+	for (it = calls.begin(); it != calls.end(); it++) {
+		Call c = *it;
+		cerr << c.first << ": " << c.second << endl;
+	}
+	
     //outputFile.close();
 }
 
@@ -115,14 +124,15 @@ int main(int argc, char *argv[])
     // Gets the output file name from the command line (-o flag).
     //KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
     //    "pintool.out", "Output file name");
-
+	
     // Starts Pin and checks parameters.
     if (PIN_Init(argc, argv)) {
         return PrintUsage();
     }
 
     // Gets CALL addresses.
-    //set<string> callAddr = readInputData(inFileKnob.Value().c_str());
+    readInputData(inFileKnob.Value().c_str());
+	if (calls.empty()) return -1;
 
     // Opens the output file.
     //outputFile.open(outFileKnob.Value().c_str(), \
