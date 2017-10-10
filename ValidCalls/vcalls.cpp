@@ -15,6 +15,10 @@
 
 using namespace std;
 
+enum callOpcode {
+	opE8, op9A, opFF
+};
+
 /**
  * Global Variables.
  */
@@ -22,7 +26,7 @@ static ofstream outputFile;
 map<string, string> calls;
 
 /**
- * Prints the correct usage of the pintool.
+ * Print the correct usage of the pintool.
  */
 INT32 PrintUsage() {
     cerr << "\nUsage: pin -t <Pintool> [-o <OutputFileName> [-i"
@@ -39,13 +43,13 @@ INT32 PrintUsage() {
 }
 
 /**
- * Initializes the necessary data for the Pintool.
+ * Initialize the necessary data for the Pintool.
  *
  * @callListFileName: Input file name.
  * @return: A set that contains the memory locations of the CALL instructions
  * in the input file and their hexadecimal dump.
  */
-void readInputData(string callListFileName) {
+VOID readInputData(string callListFileName) {
     ifstream callListFile;
 	callListFile.open(callListFileName.c_str());
 	
@@ -70,14 +74,70 @@ void readInputData(string callListFileName) {
 }
 
 /**
- * Analysis function for RET instructions.
+ * Reverse the byte order of a string that represents an hexadecimal byte flow.
  */
-VOID doRet() { // TODO
-    
+string reverseByteOrder(string const& bytes) {
+	string result;
+	result.reserve(bytes.size());
+	
+	for (size_t i = bytes.size(); i != 0; i -= 2)
+		result.append(bytes, i-2, 2);
+	
+	// Remove zeros from beginning.
+	int index = 0;
+	while (result.at(index) == '0')
+		index++;
+
+	result = result.substr(index);
+	
+	return result;
 }
 
 /**
- * For each trace in the application's execution flow, looks for RETs.
+ * Get the CALL instruction opcode code.
+ */
+callOpcode getOpcodeCode(string const& opcode) {
+	if (opcode == "E8")
+		return opE8;
+	if (opcode == "9A")
+		return op9A;
+	else
+		return opFF;
+}
+
+/**
+ * Return the target address of a CALL instruction represented by string
+ * @dump, the instruction`s hexadecimal dump.
+ */
+UINT64 getCallTarget(string dump) { // TODO
+	string opcode = dump.substr(0, 2);
+	
+	switch(getOpcodeCode(opcode)) {
+	case opE8: // Call near, relative
+		
+		break;
+		
+	case op9A: // Call far, absolute
+	
+		break;
+		
+	case opFF: // Call near, absolute indirect OR Call far, absolute indirect.
+		
+		break;
+	}
+	
+	return 0;
+}
+
+/**
+ * Analysis function for RET instructions.
+ */
+VOID doRet() { // TODO
+	
+}
+
+/**
+ * For each trace in the application's execution flow, look for RETs.
  */
 VOID InstrumentCode(TRACE trace, VOID *v) { // TODO
     /**
@@ -95,7 +155,7 @@ VOID InstrumentCode(TRACE trace, VOID *v) { // TODO
 }
 
 /**
- * Performs necessary operations when the instrumented application is about to
+ * Perform necessary operations when the instrumented application is about to
  * end execution.
  */
 VOID Fini(INT32 code, VOID *v) { // TODO
@@ -105,25 +165,25 @@ VOID Fini(INT32 code, VOID *v) { // TODO
 
 int main(int argc, char *argv[])
 {
-    // Gets the input file name from the command line (-i flag).
+    // Get the input file name from the command line (-i flag).
     KNOB<string> inFileKnob(KNOB_MODE_WRITEONCE, "pintool", "i",
         "call.txt", "Input file name -- this file must contain the list of"
         "addresses in memory that contain CALL instructions");
 
-    // Gets the output file name from the command line (-o flag).
+    //Get the output file name from the command line (-o flag).
     //KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
     //    "pintool.out", "Output file name");
 	
-    // Starts Pin and checks parameters.
+    // Start Pin and checks parameters.
     if (PIN_Init(argc, argv)) {
         return PrintUsage();
     }
 
-    // Gets CALL addresses.
+    // Get CALL addresses.
     readInputData(inFileKnob.Value().c_str());
 	if (calls.empty()) return -1;
 
-    // Opens the output file.
+    // Open the output file.
     //outputFile.open(outFileKnob.Value().c_str(), \
     //    std::ofstream::out | std::ofstream::app);
 
