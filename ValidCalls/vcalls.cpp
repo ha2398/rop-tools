@@ -9,12 +9,9 @@
 
 #include <iostream>
 #include <fstream>
-#include <set>
+#include <map>
 #include <string>
 #include <sstream>
-#include <utility>
-
-typedef pair<string, string> Call;
 
 using namespace std;
 
@@ -22,7 +19,7 @@ using namespace std;
  * Global Variables.
  */
 static ofstream outputFile;
-set<Call> calls;
+map<string, string> calls;
 
 /**
  * Prints the correct usage of the pintool.
@@ -65,8 +62,7 @@ void readInputData(string callListFileName) {
 		getline(iss, addr, ' ');
 		getline(iss, dump, ' ');
 		
-		Call newCall(addr, dump);
-		calls.insert(newCall);
+		calls.insert( pair<string, string>(addr, dump) );
 	}
 		
     callListFile.close();
@@ -81,8 +77,7 @@ VOID doRet() { // TODO
 }
 
 /**
- * For each trace in the application's execution flow, looks for CALLs and RETs,
- * calling the proper analysis function for each.
+ * For each trace in the application's execution flow, looks for RETs.
  */
 VOID InstrumentCode(TRACE trace, VOID *v) { // TODO
     /**
@@ -104,12 +99,6 @@ VOID InstrumentCode(TRACE trace, VOID *v) { // TODO
  * end execution.
  */
 VOID Fini(INT32 code, VOID *v) { // TODO
-	set<Call> :: iterator it;
-	
-	for (it = calls.begin(); it != calls.end(); it++) {
-		Call c = *it;
-		cerr << c.first << ": " << c.second << endl;
-	}
 	
     //outputFile.close();
 }
