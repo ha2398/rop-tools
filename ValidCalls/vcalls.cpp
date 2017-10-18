@@ -106,15 +106,47 @@ callOpcode getOpcodeCode(string const& opcode) {
 }
 
 /**
- * Return the target address of a CALL instruction represented by string
- * @dump, the instruction`s hexadecimal dump.
+ * Return the target address of a CALL instruction.
+ * @addr: the instruction's address.
+ * @dump: the instruction's hexadecimal dump.
  */
-UINT64 getCallTarget(string dump) { // TODO
-	string opcode = dump.substr(0, 2);
+string getCallTarget(string addr, string dump) { // TODO
+	string target; // CALL target
+	string opcode = dump.substr(0, 2); // CALL opcode
+	string operand; // Operand hex string for some CALL types
+	stringstream ss; // Used for hex <-> decimal conversions
 	
-	switch(getOpcodeCode(opcode)) {
+	int dest; // CALL operand
+	int operandSize; // Operand size for some CALL types
+	int EIP; // Instruction pointer value
+	
+	switch (getOpcodeCode(opcode)) {
 	case opE8: // Call near, relative
+		operand = reverseByteOrder(dump.substr(2));
+		operandSize = (operand.length()/2) * 8; // Operand size in bits
 		
+		ss << hex << addr;
+		ss >> EIP;
+		EIP += (dump.length()/2);
+		ss.str(string());
+		ss.clear();
+		
+		ss << hex << operand;
+		ss >> dest;
+		ss.str(string());
+		ss.clear();
+		
+		switch (operandSize) {
+		case 64:
+		case 32:
+			ss << hex << EIP + dest;	
+			break;
+		case 16:
+			ss << hex << (EIP + dest) & 0x0000FFFF;
+			break;
+		}
+
+		target = ss.str();
 		break;
 		
 	case op9A: // Call far, absolute
@@ -126,13 +158,14 @@ UINT64 getCallTarget(string dump) { // TODO
 		break;
 	}
 	
-	return 0;
+	cerr << target << endl;
+	return target;
 }
 
 /**
  * Analysis function for RET instructions.
  */
-VOID doRet() { // TODO
+VOID doRet(VOID *ip, const CONTEXT *ctxt) { // TODO
 	
 }
 
@@ -142,14 +175,14 @@ VOID doRet() { // TODO
 VOID InstrumentCode(TRACE trace, VOID *v) { // TODO
     /**
      * Each Basic Block (BBL) has a single entrace point and a single exit one
-     * as well. Hence, CALL and RET instruction will only be found at the end
+     * as well. Hence, CALL and RET instructions will only be found at the end
      * of these BBLs.
      */
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
         INS tail = BBL_InsTail(bbl);
 
         if (INS_IsRet(tail)) { // Instruments RETs
-            INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR)doRet, IARG_END);
+            INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR)doRet, IARG_INST_PTR, IARG_CONTEXT, IARG_END);
         }	
     }
 }
@@ -159,7 +192,7 @@ VOID InstrumentCode(TRACE trace, VOID *v) { // TODO
  * end execution.
  */
 VOID Fini(INT32 code, VOID *v) { // TODO
-	
+	getCallTarget("0x73f48eb1", "E8000014E9");
     //outputFile.close();
 }
 
