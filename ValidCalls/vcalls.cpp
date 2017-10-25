@@ -7,6 +7,8 @@
 
 #include "pin.H"
 
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <map>
@@ -107,34 +109,34 @@ callOpcode getOpcodeCode(string const& opcode) {
 
 /**
  * Return the target address of a CALL instruction.
+ * @ctxt: Pointer to CPU context Pin object.
  * @addr: the instruction's address.
  * @dump: the instruction's hexadecimal dump.
  */
-string getCallTarget(string addr, string dump) { // TODO
+string getCallTarget(const CONTEXT *ctxt, string addr, string dump) { // TODO
 	string target; // CALL target
 	string opcode = dump.substr(0, 2); // CALL opcode
 	string operand; // Operand hex string for some CALL types
+	
+	int segment; // Segment for ptrX:Y
+	int offset; // Offset for ptrX:Y
+	
 	stringstream ss; // Used for hex <-> decimal conversions
 	
 	int dest; // CALL operand
 	int operandSize; // Operand size for some CALL types
 	int EIP; // Instruction pointer value
 	
+	operand = reverseByteOrder(dump.substr(2));
+	
 	switch (getOpcodeCode(opcode)) {
 	case opE8: // Call near, relative
-		operand = reverseByteOrder(dump.substr(2));
 		operandSize = (operand.length()/2) * 8; // Operand size in bits
 		
-		ss << hex << addr;
-		ss >> EIP;
+		EIP = strtoul(addr.c_str(), NULL, 16);
 		EIP += (dump.length()/2);
-		ss.str(string());
-		ss.clear();
 		
-		ss << hex << operand;
-		ss >> dest;
-		ss.str(string());
-		ss.clear();
+		dest = strtoul(operand.c_str(), NULL, 16);
 		
 		switch (operandSize) {
 		case 64:
@@ -142,22 +144,27 @@ string getCallTarget(string addr, string dump) { // TODO
 			ss << hex << EIP + dest;	
 			break;
 		case 16:
-			ss << hex << (EIP + dest) & 0x0000FFFF;
+			ss << hex << ((EIP + dest) & 0x0000FFFF);
 			break;
 		}
-
-		target = ss.str();
+		
 		break;
 		
 	case op9A: // Call far, absolute
-	
+		segment = strtoul(operand.substr(0, 4).c_str(), NULL, 16);
+		offset = strtoul(operand.substr(4).c_str(), NULL, 16);
+		
+		ss << hex << (segment * 0x10) + offset;
+		
 		break;
 		
 	case opFF: // Call near, absolute indirect OR Call far, absolute indirect.
-		
+		// TODO
+		target = "0";
 		break;
 	}
 	
+	target = "0x" + ss.str();
 	cerr << target << endl;
 	return target;
 }
@@ -172,7 +179,7 @@ VOID doRet(VOID *ip, const CONTEXT *ctxt) { // TODO
 /**
  * For each trace in the application's execution flow, look for RETs.
  */
-VOID InstrumentCode(TRACE trace, VOID *v) { // TODO
+VOID InstrumentCode(TRACE trace, VOID *v) {
     /**
      * Each Basic Block (BBL) has a single entrace point and a single exit one
      * as well. Hence, CALL and RET instructions will only be found at the end
@@ -192,7 +199,6 @@ VOID InstrumentCode(TRACE trace, VOID *v) { // TODO
  * end execution.
  */
 VOID Fini(INT32 code, VOID *v) { // TODO
-	getCallTarget("0x73f48eb1", "E8000014E9");
     //outputFile.close();
 }
 
