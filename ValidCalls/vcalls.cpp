@@ -108,24 +108,48 @@ callOpcode getOpcodeCode(string const& opcode) {
 }
 
 /**
+ * Convert a hex string to a two's complement number (signed integer).
+ * @hex: String that represents the number in two's complement.
+ */
+long hexToInt(string hex) {
+	long number = stoul(hex, 0, 16);
+	
+	short index = 0;
+	// Check if 0x prefix is present.
+	if (hex[1] == 'x')
+		index += 2;
+	
+	// Check if number is negative.
+	if (hex[index] > '7')
+		number = ~number + 1;
+	
+	return number;
+}
+
+/**
  * Return the target address of a CALL instruction.
  * @ctxt: Pointer to CPU context Pin object.
  * @addr: the instruction's address.
  * @dump: the instruction's hexadecimal dump.
  */
-string getCallTarget(const CONTEXT *ctxt, string addr, string dump) { // TODO
-	string target; // CALL target
+long getCallTarget(const CONTEXT *ctxt, string addr, string dump) { // TODO
 	string opcode = dump.substr(0, 2); // CALL opcode
 	string operand; // Operand hex string for some CALL types
 	
-	int segment; // Segment for ptrX:Y
-	int offset; // Offset for ptrX:Y
+	long segment; // Segment for ptrX:Y
+	long offset; // Offset for ptrX:Y
+
+	long target;
 	
-	stringstream ss; // Used for hex <-> decimal conversions
+	long dest; // CALL operand
+	unsigned short operandSize; // Operand size for some CALL types
+	long IP; // Instruction pointer value
 	
-	int dest; // CALL operand
-	int operandSize; // Operand size for some CALL types
-	int EIP; // Instruction pointer value
+	unsigned short modRM; // ModR/M byte for FF CALLs.
+	unsigned short mod; // Mod field from ModR/M byte.
+	unsigned short RM; // R/M field from ModR/M byte.
+	
+	ADDRINT regVal; // Holds temporary values obtained from registers.
 	
 	operand = reverseByteOrder(dump.substr(2));
 	
@@ -133,39 +157,58 @@ string getCallTarget(const CONTEXT *ctxt, string addr, string dump) { // TODO
 	case opE8: // Call near, relative
 		operandSize = (operand.length()/2) * 8; // Operand size in bits
 		
-		EIP = strtoul(addr.c_str(), NULL, 16);
-		EIP += (dump.length()/2);
-		
-		dest = strtoul(operand.c_str(), NULL, 16);
+		IP = hexToInt(addr);
+		IP += (dump.length()/2);
+		dest = hexToInt(operand);
 		
 		switch (operandSize) {
 		case 64:
 		case 32:
-			ss << hex << EIP + dest;	
+			target = IP + dest;	
 			break;
 		case 16:
-			ss << hex << ((EIP + dest) & 0x0000FFFF);
+			target = ((IP + dest) & 0x0000FFFF);
 			break;
 		}
 		
 		break;
 		
 	case op9A: // Call far, absolute
-		segment = strtoul(operand.substr(0, 4).c_str(), NULL, 16);
-		offset = strtoul(operand.substr(4).c_str(), NULL, 16);
+		segment = hexToInt(operand.substr(0, 4));
+		offset = hexToInt(operand.substr(4));
 		
-		ss << hex << (segment * 0x10) + offset;
-		
+		target = (segment * 0x10) + offset;
 		break;
 		
 	case opFF: // Call near, absolute indirect OR Call far, absolute indirect.
 		// TODO
-		target = "0";
+		ss << hex << operand.substr(0, 2);
+		ss >> modRM;
+		ss.str(string()); ss.clear();
+		
+		mod = (modRM & 0xC0) >> 6;
+		RM = (modRM & 0x7);
+		
+		if (mod < 3) { // Mod = 0b00, 0b01 or 0b10
+			switch (RM) { // Select register to use
+			case 0:
+				regval = PIN_GetContextReg(ctxt, REG_EAX);
+			case 1:
+			case 2:
+			case 3:
+			case 4:
+			case 5:
+			case 6:
+			case 7:
+			}
+		}
+		
+		target = 0;
 		break;
+	default:
+		target = 0;
 	}
 	
-	target = "0x" + ss.str();
-	cerr << target << endl;
 	return target;
 }
 
