@@ -13,7 +13,6 @@
 #include <fstream>
 #include <map>
 #include <string>
-#include <sstream>
 
 using namespace std;
 
@@ -112,7 +111,10 @@ callOpcode getOpcodeCode(string const& opcode) {
  * @hex: String that represents the number in two's complement.
  */
 long hexToInt(string hex) {
-	long number = stoul(hex, 0, 16);
+	if (hex.empty())
+		return 0;
+	
+	long number = strtoul(hex.c_str(), 0, 16);
 	
 	short index = 0;
 	// Check if 0x prefix is present.
@@ -138,8 +140,6 @@ long getCallTarget(const CONTEXT *ctxt, string addr, string dump) { // TODO
 	
 	long segment; // Segment for ptrX:Y
 	long offset; // Offset for ptrX:Y
-
-	long target;
 	
 	long dest; // CALL operand
 	unsigned short operandSize; // Operand size for some CALL types
@@ -147,9 +147,15 @@ long getCallTarget(const CONTEXT *ctxt, string addr, string dump) { // TODO
 	
 	unsigned short modRM; // ModR/M byte for FF CALLs.
 	unsigned short mod; // Mod field from ModR/M byte.
+	unsigned short reg; // Reg field from ModR/M byte.
 	unsigned short RM; // R/M field from ModR/M byte.
 	
+	long disp; // Displacement
 	ADDRINT regVal; // Holds temporary values obtained from registers.
+	
+	long target; // CALL target.
+	REGVALUE128 memOp; // Holds value read from memory.
+	unsigned short memOpSize; // Holds size (in bytes) of value read from memory.
 	
 	operand = reverseByteOrder(dump.substr(2));
 	
@@ -182,25 +188,56 @@ long getCallTarget(const CONTEXT *ctxt, string addr, string dump) { // TODO
 		
 	case opFF: // Call near, absolute indirect OR Call far, absolute indirect.
 		// TODO
-		ss << hex << operand.substr(0, 2);
-		ss >> modRM;
-		ss.str(string()); ss.clear();
+		
+		modRM = hexToInt(operand.substr(0, 2));
 		
 		mod = (modRM & 0xC0) >> 6;
+		reg = (modRM & 0x38) >> 3;
 		RM = (modRM & 0x7);
 		
-		if (mod < 3) { // Mod = 0b00, 0b01 or 0b10
-			switch (RM) { // Select register to use
-			case 0:
-				regval = PIN_GetContextReg(ctxt, REG_EAX);
-			case 1:
-			case 2:
-			case 3:
-			case 4:
-			case 5:
-			case 6:
-			case 7:
+		switch (RM) { // Select register to use
+		case 0:
+			regval = PIN_GetContextReg(ctxt, REG_EAX);
+			
+			break;
+		case 1:
+			regval = PIN_GetContextReg(ctxt, REG_ECX);
+			break;
+		case 2:
+			regval = PIN_GetContextReg(ctxt, REG_EDX);
+			break;
+		case 3:
+			regval = PIN_GetContextReg(ctxt, REG_EBX);
+			break;
+		case 4:
+			if (mod < 3) { // Depends on following SIB byte.
+			
+			} else {
+				regval = PIN_GetContextReg(ctxt, REG_ESP);
 			}
+			break;
+		case 5:
+			if (mod > 0) {
+				regval = PIN_GetContextReg(ctxt, REG_EBP);
+			} else { // Displacement
+				
+			}
+		case 6:
+			regval = PIN_GetContextReg(ctxt, REG_ESI);
+			break;
+		case 7:
+			regval = PIN_GetContextReg(ctxt, REG_EDI);
+			break;
+		}
+		
+		if (mod < 3) { // Calculate displacement
+			disp = hexToInt(operand.substr(2));
+			memOpSize = reg * 2; // Empirical
+			memOp = LEVEL_CORE::MemoryLoadRegvalue128(regVal, memOpSize);
+			
+			target = memOp + disp;
+		} else {
+			
 		}
 		
 		target = 0;
