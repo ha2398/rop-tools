@@ -13,6 +13,7 @@
 #include <fstream>
 #include <map>
 #include <string>
+#include <sstream>
 
 using namespace std;
 
@@ -25,6 +26,8 @@ enum callOpcode {
  */
 static ofstream outputFile;
 map<string, string> calls;
+unsigned long totalFound = 0;
+unsigned long totalCorrect = 0;
 
 /**
  * Print the correct usage of the pintool.
@@ -134,7 +137,7 @@ long hexToInt(string hex) {
  * @addr: the instruction's address.
  * @dump: the instruction's hexadecimal dump.
  */
-long getCallTarget(const CONTEXT *ctxt, string addr, string dump) { // TODO
+long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 	string opcode = dump.substr(0, 2); // CALL opcode
 	string operand; // Operand hex string for some CALL types
 	
@@ -154,8 +157,8 @@ long getCallTarget(const CONTEXT *ctxt, string addr, string dump) { // TODO
 	ADDRINT regVal; // Holds temporary values obtained from registers.
 	
 	long target; // CALL target.
-	REGVALUE128 memOp; // Holds value read from memory.
-	unsigned short memOpSize; // Holds size (in bytes) of value read from memory.
+	unsigned long memOp; // Holds value read from memory.
+	unsigned short memOpSize;//Holds size (in bytes) of value read from memory.
 	
 	operand = reverseByteOrder(dump.substr(2));
 	
@@ -163,7 +166,7 @@ long getCallTarget(const CONTEXT *ctxt, string addr, string dump) { // TODO
 	case opE8: // Call near, relative
 		operandSize = (operand.length()/2) * 8; // Operand size in bits
 		
-		IP = hexToInt(addr);
+		IP = addr;
 		IP += (dump.length()/2);
 		dest = hexToInt(operand);
 		
@@ -197,44 +200,42 @@ long getCallTarget(const CONTEXT *ctxt, string addr, string dump) { // TODO
 		
 		switch (RM) { // Select register to use
 		case 0:
-			regval = PIN_GetContextReg(ctxt, REG_EAX);
-			
+			regVal = PIN_GetContextReg(ctxt, REG_EAX);
 			break;
 		case 1:
-			regval = PIN_GetContextReg(ctxt, REG_ECX);
+			regVal = PIN_GetContextReg(ctxt, REG_ECX);
 			break;
 		case 2:
-			regval = PIN_GetContextReg(ctxt, REG_EDX);
+			regVal = PIN_GetContextReg(ctxt, REG_EDX);
 			break;
 		case 3:
-			regval = PIN_GetContextReg(ctxt, REG_EBX);
+			regVal = PIN_GetContextReg(ctxt, REG_EBX);
 			break;
 		case 4:
 			if (mod < 3) { // Depends on following SIB byte.
 			
 			} else {
-				regval = PIN_GetContextReg(ctxt, REG_ESP);
+				regVal = PIN_GetContextReg(ctxt, REG_ESP);
 			}
 			break;
 		case 5:
 			if (mod > 0) {
-				regval = PIN_GetContextReg(ctxt, REG_EBP);
+				regVal = PIN_GetContextReg(ctxt, REG_EBP);
 			} else { // Displacement
 				
 			}
 		case 6:
-			regval = PIN_GetContextReg(ctxt, REG_ESI);
+			regVal = PIN_GetContextReg(ctxt, REG_ESI);
 			break;
 		case 7:
-			regval = PIN_GetContextReg(ctxt, REG_EDI);
+			regVal = PIN_GetContextReg(ctxt, REG_EDI);
 			break;
 		}
 		
 		if (mod < 3) { // Calculate displacement
 			disp = hexToInt(operand.substr(2));
-			memOpSize = reg * 2; // Empirical
-			memOp = LEVEL_CORE::MemoryLoadRegvalue128(regVal, memOpSize);
-			
+			memOpSize = reg * 2; // Empirical. DWORD, FWORD based on reg value.
+			PIN_SafeCopy(&memOp, (ADDRINT *) regVal, memOpSize);
 			target = memOp + disp;
 		} else {
 			
@@ -250,10 +251,29 @@ long getCallTarget(const CONTEXT *ctxt, string addr, string dump) { // TODO
 }
 
 /**
- * Analysis function for RET instructions.
+ * Analysis function for CALLs.
  */
-VOID doRet(VOID *ip, const CONTEXT *ctxt) { // TODO
+VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) { // TODO
+	totalFound++;
+
+	stringstream ss;
+	ss << hex << ip;
+	string key("0x" + ss.str());
 	
+	auto search = calls.find(key);
+	
+	if (search == calls.end()) {
+		outputFile << "Error!" << endl;
+		return;
+	}
+	
+	string dump = search->second;	
+	ADDRINT calculatedTarget = getCallTarget(ctxt, ip, dump);
+
+	if (calculatedTarget != target)
+		outputFile << "Incorrect: " << dump.substr(0, 2) << endl;
+	else
+		totalCorrect++;
 }
 
 /**
@@ -268,9 +288,17 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
         INS tail = BBL_InsTail(bbl);
 
-        if (INS_IsRet(tail)) { // Instruments RETs
-            INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR)doRet, IARG_INST_PTR, IARG_CONTEXT, IARG_END);
-        }	
+        if (INS_IsCall(tail)) { // Instrument CALLs
+			if (INS_IsDirectBranchOrCall(tail)) { // Direct CALLs
+				ADDRINT target = INS_DirectBranchOrCallTargetAddress(tail);
+				
+				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR)doCall, \
+					IARG_INST_PTR, IARG_ADDRINT, target, IARG_CONTEXT, IARG_END);
+			} else { // Indirect CALLs
+				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR)doCall, \
+					IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR, IARG_CONTEXT, IARG_END);
+			}
+        }
     }
 }
 
@@ -278,8 +306,9 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
  * Perform necessary operations when the instrumented application is about to
  * end execution.
  */
-VOID Fini(INT32 code, VOID *v) { // TODO
-    //outputFile.close();
+VOID Fini(INT32 code, VOID *v) {
+	outputFile << "Precision rate: " << (totalCorrect/totalFound)*100 << "%" << endl;
+    outputFile.close();
 }
 
 int main(int argc, char *argv[])
@@ -289,9 +318,9 @@ int main(int argc, char *argv[])
         "call.txt", "Input file name -- this file must contain the list of"
         "addresses in memory that contain CALL instructions");
 
-    //Get the output file name from the command line (-o flag).
-    //KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
-    //    "pintool.out", "Output file name");
+    // Get the output file name from the command line (-o flag).
+    KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
+        "pintool.out", "Output file name");
 	
     // Start Pin and checks parameters.
     if (PIN_Init(argc, argv)) {
@@ -300,11 +329,14 @@ int main(int argc, char *argv[])
 
     // Get CALL addresses.
     readInputData(inFileKnob.Value().c_str());
-	if (calls.empty()) return -1;
+	if (calls.empty()) {
+		cerr << "[Error] Couldn't build call list." << endl;
+		return -1;
+	}
 
     // Open the output file.
-    //outputFile.open(outFileKnob.Value().c_str(), \
-    //    std::ofstream::out | std::ofstream::app);
+    outputFile.open(outFileKnob.Value().c_str(), \
+        std::ofstream::out | std::ofstream::app);
 
     TRACE_AddInstrumentFunction(InstrumentCode, 0);
     PIN_AddFiniFunction(Fini, 0);
