@@ -70,7 +70,10 @@ VOID readInputData(string callListFileName) {
 		getline(iss, addr, ' ');
 		getline(iss, dump, ' ');
 		
-		calls.insert( pair<string, string>(addr, dump) );
+		int length = addr.length();
+		addr.erase(length-1, 1);
+		
+		calls[addr] = dump;
 	}
 		
     callListFile.close();
@@ -126,7 +129,7 @@ long hexToInt(string hex) {
 	
 	// Check if number is negative.
 	if (hex[index] > '7')
-		number = ~number + 1;
+		number = (~number + 1) * -1;
 	
 	return number;
 }
@@ -144,7 +147,6 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 	long segment; // Segment for ptrX:Y
 	long offset; // Offset for ptrX:Y
 	
-	long dest; // CALL operand
 	unsigned short operandSize; // Operand size for some CALL types
 	long IP; // Instruction pointer value
 	
@@ -156,7 +158,7 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 	long disp; // Displacement
 	ADDRINT regVal; // Holds temporary values obtained from registers.
 	
-	long target; // CALL target.
+	long target = 0; // CALL target.
 	unsigned long memOp; // Holds value read from memory.
 	unsigned short memOpSize;//Holds size (in bytes) of value read from memory.
 	
@@ -164,19 +166,19 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 	
 	switch (getOpcodeCode(opcode)) {
 	case opE8: // Call near, relative
-		operandSize = (operand.length()/2) * 8; // Operand size in bits
+		operandSize = (dump.substr(2).length()/2) * 8; // Operand size in bits
 		
 		IP = addr;
 		IP += (dump.length()/2);
-		dest = hexToInt(operand);
+		disp = hexToInt(operand);
 		
 		switch (operandSize) {
 		case 64:
 		case 32:
-			target = IP + dest;	
+			target = IP + disp;	
 			break;
 		case 16:
-			target = ((IP + dest) & 0x0000FFFF);
+			target = ((IP + disp) & 0x0000FFFF);
 			break;
 		}
 		
@@ -241,7 +243,6 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 			
 		}
 		
-		target = 0;
 		break;
 	default:
 		target = 0;
@@ -263,22 +264,27 @@ VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) { // TODO
 	auto search = calls.find(key);
 	
 	if (search == calls.end()) {
-		outputFile << "Error!" << endl;
+		outputFile << "Error with key: " << key << endl;
 		return;
 	}
 	
 	string dump = search->second;	
 	ADDRINT calculatedTarget = getCallTarget(ctxt, ip, dump);
 
-	if (calculatedTarget != target)
-		outputFile << "Incorrect: " << dump.substr(0, 2) << endl;
-	else
+	if (calculatedTarget != target) {
+		outputFile << "Instruction: " << dump;
+		outputFile << ". Address: " << ip;
+		outputFile << ". Expecting: " << target;
+		outputFile << ", got: " << calculatedTarget << endl;
+	} else {
 		totalCorrect++;
+	}
 }
 
 /**
  * For each trace in the application's execution flow, look for RETs.
  */
+ 
 VOID InstrumentCode(TRACE trace, VOID *v) {
     /**
      * Each Basic Block (BBL) has a single entrace point and a single exit one
@@ -307,7 +313,8 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
  * end execution.
  */
 VOID Fini(INT32 code, VOID *v) {
-	outputFile << "Precision rate: " << (totalCorrect/totalFound)*100 << "%" << endl;
+	outputFile << "Total correct: " << totalCorrect << endl;
+	outputFile << "Total found: " << totalFound << endl;
     outputFile.close();
 }
 
@@ -321,6 +328,10 @@ int main(int argc, char *argv[])
     // Get the output file name from the command line (-o flag).
     KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
         "pintool.out", "Output file name");
+		
+	// Open the output file.
+    outputFile.open(outFileKnob.Value().c_str(), \
+        std::ofstream::out | std::ofstream::app);
 	
     // Start Pin and checks parameters.
     if (PIN_Init(argc, argv)) {
@@ -329,14 +340,11 @@ int main(int argc, char *argv[])
 
     // Get CALL addresses.
     readInputData(inFileKnob.Value().c_str());
+	
 	if (calls.empty()) {
 		cerr << "[Error] Couldn't build call list." << endl;
 		return -1;
 	}
-
-    // Open the output file.
-    outputFile.open(outFileKnob.Value().c_str(), \
-        std::ofstream::out | std::ofstream::app);
 
     TRACE_AddInstrumentFunction(InstrumentCode, 0);
     PIN_AddFiniFunction(Fini, 0);
