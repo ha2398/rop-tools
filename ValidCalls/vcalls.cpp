@@ -229,8 +229,9 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 			if (mod > 0) {
 				regVal = PIN_GetContextReg(ctxt, REG_EBP);
 			} else {
-				regVal = PIN_GetContextReg(ctxt, REG_SEG_DS);
+				regVal = 0;
 			}
+			break;
 		case 6:
 			regVal = PIN_GetContextReg(ctxt, REG_ESI);
 			break;
@@ -257,10 +258,12 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 				outputFile << "(ADDRINT *) regVal:\t" << (ADDRINT *) regVal << endl;
 				target = memOp + disp;
 			} else {
-				PIN_SafeCopy(&memOp, (ADDRINT *) regVal + disp, memOpSize);
 				outputFile << "regVal:\t" << regVal << endl;
-				outputFile << "(ADDRINT *) regVal:\t" << (ADDRINT *) regVal << endl;
-				outputFile << "(ADDRINT *) regVal + disp:\t" << (ADDRINT *) (regVal + disp) << endl;
+				regVal += (ADDRINT) disp;
+				outputFile << "regVal (+disp):\t" << regVal << endl;
+				outputFile << "memOp:\t" << memOp << endl;
+				PIN_SafeCopy(&memOp, (ADDRINT *) regVal, memOpSize);
+				outputFile << "memOp:\t" << memOp << endl;
 				target = memOp;
 			}
 		} else {
@@ -296,7 +299,7 @@ VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) { // TODO
 	}
 	
 	string dump = search->second;	
-	ADDRINT calculatedTarget = getCallTarget(ctxt, ip, dump);
+	long calculatedTarget = getCallTarget(ctxt, ip, dump);
 
 	if (calculatedTarget != target) {
 		outputFile << "WRONG! Instruction: " << dump;
