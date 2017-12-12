@@ -187,20 +187,25 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 	case op9A: // Call far, absolute
 		segment = hexToInt(operand.substr(0, 4));
 		offset = hexToInt(operand.substr(4));
-		
 		target = (segment * 0x10) + offset;
 		break;
 		
-	case opFF: // Call near, absolute indirect OR Call far, absolute indirect.
-		// TODO
+	case opFF: // Call near, absolute indirect OR Call far, absolute indirect. TODO
+		modRM = hexToInt(dump.substr(2).substr(0, 2));
 		
-		modRM = hexToInt(operand.substr(0, 2));
-		
+		// Get individual fields.
 		mod = (modRM & 0xC0) >> 6;
 		reg = (modRM & 0x38) >> 3;
 		RM = (modRM & 0x7);
 		
-		switch (RM) { // Select register to use
+		outputFile << "FF CALL found:\t" << dump << endl;
+		outputFile << "modRM:\t" << modRM << endl;
+		outputFile << "mod:\t" << mod << endl;
+		outputFile << "reg:\t" << reg << endl;
+		outputFile << "RM:\t" << RM << endl;
+		
+		// Select register to use
+		switch (RM) {
 		case 0:
 			regVal = PIN_GetContextReg(ctxt, REG_EAX);
 			break;
@@ -223,8 +228,8 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 		case 5:
 			if (mod > 0) {
 				regVal = PIN_GetContextReg(ctxt, REG_EBP);
-			} else { // Displacement
-				
+			} else {
+				regVal = PIN_GetContextReg(ctxt, REG_SEG_DS);
 			}
 		case 6:
 			regVal = PIN_GetContextReg(ctxt, REG_ESI);
@@ -234,14 +239,36 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 			break;
 		}
 		
-		if (mod < 3) { // Calculate displacement
-			disp = hexToInt(operand.substr(2));
-			memOpSize = reg * 2; // Empirical. DWORD, FWORD based on reg value.
-			PIN_SafeCopy(&memOp, (ADDRINT *) regVal, memOpSize);
-			target = memOp + disp;
+		// Calculate displacement
+		if (mod == 1 || mod == 2 || (mod == 0 && RM == 5)) {
+			disp = hexToInt(reverseByteOrder(dump.substr(4)));
 		} else {
-			
+			disp = 0;
 		}
+		
+		outputFile << "disp:\t" << disp << endl;
+		
+		// Read from memory
+		if (mod < 3) {
+			memOpSize = reg * 2; // Empirical. DWORD, FWORD based on reg value.
+			if (RM != 5 && mod != 0) {
+				PIN_SafeCopy(&memOp, (ADDRINT *) regVal, memOpSize);
+				outputFile << "regVal:\t" << regVal << endl;
+				outputFile << "(ADDRINT *) regVal:\t" << (ADDRINT *) regVal << endl;
+				target = memOp + disp;
+			} else {
+				PIN_SafeCopy(&memOp, (ADDRINT *) regVal + disp, memOpSize);
+				outputFile << "regVal:\t" << regVal << endl;
+				outputFile << "(ADDRINT *) regVal:\t" << (ADDRINT *) regVal << endl;
+				outputFile << "(ADDRINT *) regVal + disp:\t" << (ADDRINT *) (regVal + disp) << endl;
+				target = memOp;
+			}
+		} else {
+			target = (unsigned long) regVal;
+		}
+		
+		outputFile << "target:\t" << target << endl;
+		outputFile << endl;
 		
 		break;
 	default:
@@ -272,19 +299,19 @@ VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) { // TODO
 	ADDRINT calculatedTarget = getCallTarget(ctxt, ip, dump);
 
 	if (calculatedTarget != target) {
-		outputFile << "Instruction: " << dump;
+		outputFile << "WRONG! Instruction: " << dump;
 		outputFile << ". Address: " << ip;
 		outputFile << ". Expecting: " << target;
 		outputFile << ", got: " << calculatedTarget << endl;
 	} else {
+		outputFile << "CORRECT! Instruction: " << dump;
+		outputFile << ". Address: " << ip;
+		outputFile << ". Expecting: " << target;
+		outputFile << ", got: " << calculatedTarget << endl;
 		totalCorrect++;
 	}
 }
 
-/**
- * For each trace in the application's execution flow, look for RETs.
- */
- 
 VOID InstrumentCode(TRACE trace, VOID *v) {
     /**
      * Each Basic Block (BBL) has a single entrace point and a single exit one
