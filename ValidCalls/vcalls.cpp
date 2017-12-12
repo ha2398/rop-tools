@@ -252,20 +252,14 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 		// Read from memory
 		if (mod < 3) {
 			memOpSize = reg * 2; // Empirical. DWORD, FWORD based on reg value.
-			if (RM != 5 && mod != 0) {
-				PIN_SafeCopy(&memOp, (ADDRINT *) regVal, memOpSize);
-				outputFile << "regVal:\t" << regVal << endl;
-				outputFile << "(ADDRINT *) regVal:\t" << (ADDRINT *) regVal << endl;
-				target = memOp + disp;
-			} else {
-				outputFile << "regVal:\t" << regVal << endl;
-				regVal += (ADDRINT) disp;
+			
+			outputFile << "regVal:\t" << regVal << endl;
+			regVal += (ADDRINT) disp;
 				outputFile << "regVal (+disp):\t" << regVal << endl;
-				outputFile << "memOp:\t" << memOp << endl;
-				PIN_SafeCopy(&memOp, (ADDRINT *) regVal, memOpSize);
-				outputFile << "memOp:\t" << memOp << endl;
-				target = memOp;
-			}
+				outputFile << "memOp before:\t" << memOp << endl;
+			PIN_SafeCopy(&memOp, (ADDRINT *) regVal, memOpSize);
+				outputFile << "memOp after:\t" << memOp << endl;
+			target = memOp;
 		} else {
 			target = (unsigned long) regVal;
 		}
