@@ -147,8 +147,13 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 	unsigned short reg; // Reg field from ModR/M byte.
 	unsigned short RM; // R/M field from ModR/M byte.
 	
+	unsigned short sib; // SIB byte for FF CALLs.
+	unsigned short ss; // Scale field from sib byte.
+	unsigned short index; // Index field from sib byte.
+	unsigned short base = 8; // Base field from sib byte.
+	
 	long disp; // Displacement
-	ADDRINT regVal; // Holds temporary values obtained from registers.
+	ADDRINT regVal = 0; // Holds temporary values obtained from registers.
 	
 	long target = 0; // CALL target.
 	unsigned long memOp = 0; // Holds value read from memory.
@@ -182,18 +187,13 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 		break;
 		
 	case opFF: // Call near, absolute indirect OR Call far, absolute indirect. TODO
-		modRM = hexToInt(dump.substr(2).substr(0, 2));
+		// ModR/M Byte: Mod (2bit) | Reg (3bit) | R/M (3bit)
+		modRM = hexToInt(dump.substr(2, 2));
 		
 		// Get individual fields.
 		mod = (modRM & 0xC0) >> 6;
 		reg = (modRM & 0x38) >> 3;
 		RM = (modRM & 0x7);
-		
-		outputFile << "FF CALL found:\t" << dump << endl;
-		outputFile << "modRM:\t" << modRM << endl;
-		outputFile << "mod:\t" << mod << endl;
-		outputFile << "reg:\t" << reg << endl;
-		outputFile << "RM:\t" << RM << endl;
 		
 		// Select register to use
 		switch (RM) {
@@ -210,8 +210,71 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 			regVal = PIN_GetContextReg(ctxt, REG_EBX);
 			break;
 		case 4:
-			if (mod < 3) { // Depends on following SIB byte.
-			
+			if (mod < 3) { // Depends on following SIB (Scale, index, base) byte.
+				// SIB byte: Scale (2bit) | Index (3bit) | Base (3bit)
+				sib = hexToInt(dump.substr(4, 2));
+				
+				// Get individual fields.
+				ss = (sib & 0xC0) >> 6;
+				ss = 1 << ss;
+				index = (sib & 0x38) >> 3;
+				base = (sib & 0x7);
+				
+				// Calculate base address
+				switch (base) {
+				case 0:
+					regVal = PIN_GetContextReg(ctxt, REG_EAX);
+					break;
+				case 1:
+					regVal = PIN_GetContextReg(ctxt, REG_ECX);
+					break;
+				case 2:
+					regVal = PIN_GetContextReg(ctxt, REG_EDX);
+					break;
+				case 3:
+					regVal = PIN_GetContextReg(ctxt, REG_EBX);
+					break;
+				case 4:
+					regVal = PIN_GetContextReg(ctxt, REG_ESP);
+					break;
+				case 5:
+					if (mod != 0)			
+						regVal = PIN_GetContextReg(ctxt, REG_EBP);
+					break;
+				case 6:
+					regVal = PIN_GetContextReg(ctxt, REG_ESI);
+					break;
+				case 7:
+					regVal = PIN_GetContextReg(ctxt, REG_EDI);
+					break;
+				}
+				
+				// Calculate scaled index.
+				switch (index) {
+				case 0:
+					regVal += PIN_GetContextReg(ctxt, REG_EAX) * ss;
+					break;
+				case 1:
+					regVal += PIN_GetContextReg(ctxt, REG_ECX) * ss;
+					break;
+				case 2:
+					regVal += PIN_GetContextReg(ctxt, REG_EDX) * ss;
+					break;
+				case 3:
+					regVal += PIN_GetContextReg(ctxt, REG_EBX) * ss;
+					break;
+				case 4:
+					break;
+				case 5:
+					regVal += PIN_GetContextReg(ctxt, REG_EBP) * ss;
+					break;
+				case 6:
+					regVal += PIN_GetContextReg(ctxt, REG_ESI) * ss;
+					break;
+				case 7:
+					regVal += PIN_GetContextReg(ctxt, REG_EDI) * ss;
+					break;
+				}
 			} else {
 				regVal = PIN_GetContextReg(ctxt, REG_ESP);
 			}
@@ -232,30 +295,23 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 		}
 		
 		// Calculate displacement
-		if (mod == 1 || mod == 2 || (mod == 0 && RM == 5)) {
+		if (RM == 4 && base == 5) {
+			disp = hexToInt(reverseByteOrder(dump.substr(6)));
+		} else if (mod == 1 || mod == 2 || (mod == 0 && RM == 5)) {
 			disp = hexToInt(reverseByteOrder(dump.substr(4)));
 		} else {
 			disp = 0;
 		}
 		
-		outputFile << "disp:\t" << disp << endl;
-		
 		// Read from memory
 		if (mod < 3) {
 			memOpSize = reg * 2; // Empirical. DWORD, FWORD based on reg value.
-			
-			outputFile << "regVal:\t" << regVal << endl;
 			regVal += (ADDRINT) disp;
-				outputFile << "regVal (+disp):\t" << regVal << endl;
 			PIN_SafeCopy(&memOp, (ADDRINT *) regVal, memOpSize);
-				outputFile << "memOp after:\t" << memOp << endl;
 			target = memOp;
 		} else {
 			target = (unsigned long) regVal;
 		}
-		
-		outputFile << "target:\t" << target << endl;
-		outputFile << endl;
 		
 		break;
 	default:
@@ -268,9 +324,7 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 /**
  * Analysis function for CALLs.
  */
-VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) { // TODO
-	totalFound++;
-
+VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) {
 	stringstream ss;
 	ss << hex << ip;
 	string key("0x" + ss.str());
@@ -281,6 +335,8 @@ VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) { // TODO
 		outputFile << "Error with key: " << key << endl;
 		return;
 	}
+	
+	totalFound++;
 	
 	string dump = search->second;	
 	long calculatedTarget = getCallTarget(ctxt, ip, dump);
