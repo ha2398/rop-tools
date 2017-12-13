@@ -12,6 +12,7 @@
 #include <iostream>
 #include <fstream>
 #include <map>
+#include <set>
 #include <string>
 #include <sstream>
 
@@ -28,6 +29,9 @@ static ofstream outputFile;
 map<string, string> calls;
 unsigned long totalFound = 0;
 unsigned long totalCorrect = 0;
+
+set<string> correct;
+set<string> incorrect;
 
 /**
  * Print the correct usage of the pintool.
@@ -90,13 +94,6 @@ string reverseByteOrder(string const& bytes) {
 	for (size_t i = bytes.size(); i != 0; i -= 2)
 		result.append(bytes, i-2, 2);
 	
-	// Remove zeros from beginning.
-	int index = 0;
-	while (result.at(index) == '0')
-		index++;
-
-	result = result.substr(index);
-	
 	return result;
 }
 
@@ -116,22 +113,17 @@ callOpcode getOpcodeCode(string const& opcode) {
  * Convert a hex string to a two's complement number (signed integer).
  * @hex: String that represents the number in two's complement.
  */
-long hexToInt(string hex) {
-	if (hex.empty())
-		return 0;
-	
-	long number = strtoul(hex.c_str(), 0, 16);
-	
-	short index = 0;
-	// Check if 0x prefix is present.
-	if (hex[1] == 'x')
-		index += 2;
-	
-	// Check if number is negative.
-	if (hex[index] > '7')
-		number = (~number + 1) * -1;
-	
-	return number;
+long int hexToInt(string in) {
+	int bits = in.length() * 4;
+	char *endPtr;
+	long long int result;
+
+	result = strtoll(in.c_str(), &endPtr, 16);
+
+	if (result >= (1LL << (bits - 1)))
+		result -= (1LL << bits);
+
+	return result;
 }
 
 /**
@@ -159,15 +151,14 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 	ADDRINT regVal; // Holds temporary values obtained from registers.
 	
 	long target = 0; // CALL target.
-	unsigned long memOp; // Holds value read from memory.
+	unsigned long memOp = 0; // Holds value read from memory.
 	unsigned short memOpSize;//Holds size (in bytes) of value read from memory.
 	
 	operand = reverseByteOrder(dump.substr(2));
 	
 	switch (getOpcodeCode(opcode)) {
 	case opE8: // Call near, relative
-		operandSize = (dump.substr(2).length()/2) * 8; // Operand size in bits
-		
+		operandSize = (dump.substr(2).length()) * 4; // Operand size in bits
 		IP = addr;
 		IP += (dump.length()/2);
 		disp = hexToInt(operand);
@@ -256,7 +247,6 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 			outputFile << "regVal:\t" << regVal << endl;
 			regVal += (ADDRINT) disp;
 				outputFile << "regVal (+disp):\t" << regVal << endl;
-				outputFile << "memOp before:\t" << memOp << endl;
 			PIN_SafeCopy(&memOp, (ADDRINT *) regVal, memOpSize);
 				outputFile << "memOp after:\t" << memOp << endl;
 			target = memOp;
@@ -300,11 +290,20 @@ VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) { // TODO
 		outputFile << ". Address: " << ip;
 		outputFile << ". Expecting: " << target;
 		outputFile << ", got: " << calculatedTarget << endl;
+		
+		string opcode = (!dump.substr(0, 2).compare("FF")) ? dump.substr(0, 4) : dump.substr(0, 2);
+		
+		auto it = incorrect.find(opcode);
+		if (it == incorrect.end())
+			incorrect.insert(opcode);
+		
 	} else {
-		outputFile << "CORRECT! Instruction: " << dump;
-		outputFile << ". Address: " << ip;
-		outputFile << ". Expecting: " << target;
-		outputFile << ", got: " << calculatedTarget << endl;
+		string opcode = (!dump.substr(0, 2).compare("FF")) ? dump.substr(0, 4) : dump.substr(0, 2);
+		
+		auto it = correct.find(opcode);
+		if (it == correct.end())
+			correct.insert(opcode);
+		
 		totalCorrect++;
 	}
 }
@@ -339,6 +338,16 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
 VOID Fini(INT32 code, VOID *v) {
 	outputFile << "Total correct: " << totalCorrect << endl;
 	outputFile << "Total found: " << totalFound << endl;
+	
+	outputFile << "Correct ones:" << endl;
+	for (auto it = correct.begin(); it != correct.end(); it++)
+		outputFile << "\t" << *it << endl;
+	
+	outputFile << endl;
+	outputFile << "Incorrect ones:" << endl;
+	for (auto it = incorrect.begin(); it != incorrect.end(); it++)
+		outputFile << "\t" << *it;
+	
     outputFile.close();
 }
 
