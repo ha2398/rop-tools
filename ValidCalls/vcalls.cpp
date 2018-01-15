@@ -29,6 +29,7 @@ static ofstream outputFile;
 map<string, string> calls;
 unsigned long totalFound = 0;
 unsigned long totalCorrect = 0;
+unsigned long totalErrors = 0;
 
 set<string> correct;
 set<string> incorrect;
@@ -181,9 +182,10 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 		break;
 		
 	case op9A: // Call far, absolute
+		operandSize = (dump.substr(6).length()) * 4; // Operand size in bits
 		segment = hexToInt(operand.substr(0, 4));
 		offset = hexToInt(operand.substr(4));
-		target = (segment * 0x10) + offset;
+		target = (segment * (operandSize)) + offset;		
 		break;
 		
 	case opFF: // Call near, absolute indirect OR Call far, absolute indirect. TODO
@@ -332,7 +334,8 @@ VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) {
 	auto search = calls.find(key);
 	
 	if (search == calls.end()) {
-		outputFile << "Error with key: " << key << endl;
+		totalErrors++;
+		outputFile << "ERROR: Address: 0x" << hex << ip << endl;
 		return;
 	}
 	
@@ -342,10 +345,10 @@ VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) {
 	long calculatedTarget = getCallTarget(ctxt, ip, dump);
 
 	if (calculatedTarget != target) {
-		outputFile << "WRONG! Instruction: " << dump;
-		outputFile << ". Address: " << ip;
-		outputFile << ". Expecting: " << target;
-		outputFile << ", got: " << calculatedTarget << endl;
+		outputFile << "WRONG! Instruction: " << hex << dump;
+		outputFile << ". Address: 0x" << hex << ip;
+		outputFile << ". Expecting: " << dec << target;
+		outputFile << ", got: " << dec << calculatedTarget << endl;
 		
 		string opcode = (!dump.substr(0, 2).compare("FF")) ? dump.substr(0, 4) : dump.substr(0, 2);
 		
@@ -354,6 +357,11 @@ VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) {
 			incorrect.insert(opcode);
 		
 	} else {
+		outputFile << "CORRECT! Instruction: " << hex << dump;
+		outputFile << ". Address: 0x" << hex << ip;
+		outputFile << ". Expecting: " << dec << target;
+		outputFile << ", got: " << dec << calculatedTarget << endl;
+		
 		string opcode = (!dump.substr(0, 2).compare("FF")) ? dump.substr(0, 4) : dump.substr(0, 2);
 		
 		auto it = correct.find(opcode);
@@ -394,6 +402,7 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
 VOID Fini(INT32 code, VOID *v) {
 	outputFile << "Total correct: " << totalCorrect << endl;
 	outputFile << "Total found: " << totalFound << endl;
+	outputFile << "Total errors: " << totalErrors << endl;
 	
 	outputFile << "Correct ones:" << endl;
 	for (auto it = correct.begin(); it != correct.end(); it++)
