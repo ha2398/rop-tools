@@ -12,7 +12,6 @@
 #include <iostream>
 #include <fstream>
 #include <map>
-#include <set>
 #include <string>
 #include <sstream>
 
@@ -30,14 +29,13 @@ map<string, string> calls;
 unsigned long totalFound = 0;
 unsigned long totalCorrect = 0;
 unsigned long totalErrors = 0;
+unsigned long totalExecutable = 0;
 
-set<string> correct;
-set<string> incorrect;
-
-/**
- * Print the correct usage of the pintool.
- */
 INT32 PrintUsage() {
+	/**
+	 * Print the correct usage of the pintool.
+	 */
+	 
     cerr << "\nUsage: pin -t <Pintool> [-o <OutputFileName> [-i"
         " <InputFileName>] -- <Application>\n\n"
         "Options:\n"
@@ -51,14 +49,15 @@ INT32 PrintUsage() {
     return -1;
 }
 
-/**
- * Initialize the necessary data for the Pintool.
- *
- * @callListFileName: Input file name.
- * @return: A set that contains the memory locations of the CALL instructions
- * in the input file and their hexadecimal dump.
- */
 VOID readInputData(string callListFileName) {
+	/**
+	 * Initialize the necessary data for the Pintool.
+	 *
+	 * @callListFileName: Input file name.
+	 * @return: A set that contains the memory locations of the CALL
+	 * instructions in the input file and their hexadecimal dump.
+	 */
+	 
     ifstream callListFile;
 	callListFile.open(callListFileName.c_str());
 	
@@ -85,10 +84,16 @@ VOID readInputData(string callListFileName) {
 	return;
 }
 
-/**
- * Reverse the byte order of a string that represents an hexadecimal byte flow.
- */
 string reverseByteOrder(string const& bytes) {
+	/**
+	 * Reverse the byte order of a string that represents an hexadecimal byte
+	 * flow.
+	 * 
+	 * @bytes: String that represents the bytes in hexadecimal notation.
+	 * @return: String that represents the same bytes of the input string but
+	 * in reverse order.
+	 */
+	 
 	string result;
 	result.reserve(bytes.size());
 	
@@ -98,10 +103,14 @@ string reverseByteOrder(string const& bytes) {
 	return result;
 }
 
-/**
- * Get the CALL instruction opcode code.
- */
-callOpcode getOpcodeCode(string const& opcode) {
+callOpcode getOpcodeCode(string const& opcode) {	
+	/**
+	 * Get the CALL instruction opcode code.
+	 * 
+	 * @opcode: String that represents the opcode of the CALL instruction.
+	 * @return: CALL opcode code.
+	 */
+	 
 	if (opcode == "E8")
 		return opE8;
 	if (opcode == "9A")
@@ -110,11 +119,17 @@ callOpcode getOpcodeCode(string const& opcode) {
 		return opFF;
 }
 
-/**
- * Convert a hex string to a two's complement number (signed integer).
- * @hex: String that represents the number in two's complement.
- */
 long int hexToInt(string in) {
+	/**
+	 * Convert a string that represents a sequence of bytes in hexadecimal
+	 * notation to a two's complement number (signed integer) equivalent to the
+	 * hex bytes.
+	 * 
+	 * @in: String that represents a sequence of bytes in hexadecimal notation.
+	 * @return: Two's complement number (signed integer) equivalent to the
+	 * input hex bytes.
+	 */
+	 
 	int bits = in.length() * 4;
 	char *endPtr;
 	long long int result;
@@ -127,13 +142,40 @@ long int hexToInt(string in) {
 	return result;
 }
 
-/**
- * Return the target address of a CALL instruction.
- * @ctxt: Pointer to CPU context Pin object.
- * @addr: the instruction's address.
- * @dump: the instruction's hexadecimal dump.
- */
-long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
+BOOL isAddrExecutable(ADDRINT address) {
+	/**
+	 * Check if a particular memory address is in an executable page.
+	 * 
+	 * @address: Address to check.
+	 * @return: True if, and only if, @address is in an executable memory page.
+	 */
+	
+	// Find Image to which address belongs.
+	PIN_LockClient();
+	IMG addrImg = IMG_FindByAddress(address);
+	PIN_UnlockClient();
+	
+	// Find Section to which address belongs.
+	SEC sec = IMG_SecHead(addrImg);
+	SEC nextSec = SEC_Next(sec);
+	while (SEC_Valid(nextSec) && SEC_Address(nextSec) <=  address) {
+		sec = nextSec;
+		nextSec = SEC_Next(sec);
+	}
+	
+	return SEC_IsExecutable(sec);
+}
+
+long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) {
+	/**
+	 * Return the target address of a CALL instruction.
+	 *
+	 * @ctxt: Pointer to CPU context Pin object.
+	 * @addr: The instruction's address.
+	 * @dump: The instruction's hexadecimal dump.
+	 * @return: Target address of input CALL instruction.
+	 */
+	 
 	string opcode = dump.substr(0, 2); // CALL opcode
 	string operand; // Operand hex string for some CALL types
 	
@@ -188,7 +230,7 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 		target = (segment * (operandSize)) + offset;		
 		break;
 		
-	case opFF: // Call near, absolute indirect OR Call far, absolute indirect. TODO
+	case opFF: // Call near, absolute indirect OR Call far, absolute indirect.
 		// ModR/M Byte: Mod (2bit) | Reg (3bit) | R/M (3bit)
 		modRM = hexToInt(dump.substr(2, 2));
 		
@@ -212,7 +254,12 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 			regVal = PIN_GetContextReg(ctxt, REG_EBX);
 			break;
 		case 4:
-			if (mod < 3) { // Depends on following SIB (Scale, index, base) byte.
+			if (mod < 3) {
+				/**
+				 * Depends on following SIB (Scale, index, base)
+				 * byte.
+				 */
+				 
 				// SIB byte: Scale (2bit) | Index (3bit) | Base (3bit)
 				sib = hexToInt(dump.substr(4, 2));
 				
@@ -323,10 +370,11 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 	return target;
 }
 
-/**
- * Analysis function for CALLs.
- */
 VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) {
+	/**
+	 * Pintool analysis function for CALLs.
+	 */
+	 
 	stringstream ss;
 	ss << hex << ip;
 	string key("0x" + ss.str());
@@ -335,7 +383,6 @@ VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) {
 	
 	if (search == calls.end()) {
 		totalErrors++;
-		outputFile << "ERROR: Address: 0x" << hex << ip << endl;
 		return;
 	}
 	
@@ -343,41 +390,30 @@ VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) {
 	
 	string dump = search->second;	
 	long calculatedTarget = getCallTarget(ctxt, ip, dump);
+	
+	if (isAddrExecutable(calculatedTarget))
+		totalExecutable++;
 
 	if (calculatedTarget != target) {
-		outputFile << "WRONG! Instruction: " << hex << dump;
-		outputFile << ". Address: 0x" << hex << ip;
-		outputFile << ". Expecting: " << dec << target;
-		outputFile << ", got: " << dec << calculatedTarget << endl;
-		
-		string opcode = (!dump.substr(0, 2).compare("FF")) ? dump.substr(0, 4) : dump.substr(0, 2);
-		
-		auto it = incorrect.find(opcode);
-		if (it == incorrect.end())
-			incorrect.insert(opcode);
-		
+		string opcode = (!dump.substr(0, 2).compare("FF")) ? \
+			dump.substr(0, 4) : dump.substr(0, 2);
 	} else {
-		outputFile << "CORRECT! Instruction: " << hex << dump;
-		outputFile << ". Address: 0x" << hex << ip;
-		outputFile << ". Expecting: " << dec << target;
-		outputFile << ", got: " << dec << calculatedTarget << endl;
-		
-		string opcode = (!dump.substr(0, 2).compare("FF")) ? dump.substr(0, 4) : dump.substr(0, 2);
-		
-		auto it = correct.find(opcode);
-		if (it == correct.end())
-			correct.insert(opcode);
-		
+		string opcode = (!dump.substr(0, 2).compare("FF")) ? \
+			dump.substr(0, 4) : dump.substr(0, 2);
+	
 		totalCorrect++;
 	}
 }
 
 VOID InstrumentCode(TRACE trace, VOID *v) {
     /**
+	 * Pintool instrumentation function.
+	 * 
      * Each Basic Block (BBL) has a single entrace point and a single exit one
      * as well. Hence, CALL and RET instructions will only be found at the end
      * of these BBLs.
      */
+	 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
         INS tail = BBL_InsTail(bbl);
 
@@ -386,32 +422,30 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
 				ADDRINT target = INS_DirectBranchOrCallTargetAddress(tail);
 				
 				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR)doCall, \
-					IARG_INST_PTR, IARG_ADDRINT, target, IARG_CONTEXT, IARG_END);
+					IARG_INST_PTR, IARG_ADDRINT, target, IARG_CONTEXT, \
+					IARG_END);
 			} else { // Indirect CALLs
 				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR)doCall, \
-					IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR, IARG_CONTEXT, IARG_END);
+					IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR, IARG_CONTEXT, \
+					IARG_END);
 			}
         }
     }
 }
 
-/**
- * Perform necessary operations when the instrumented application is about to
- * end execution.
- */
 VOID Fini(INT32 code, VOID *v) {
-	outputFile << "Total correct: " << totalCorrect << endl;
-	outputFile << "Total found: " << totalFound << endl;
-	outputFile << "Total errors: " << totalErrors << endl;
+	/**
+	 * Perform necessary operations when the instrumented application is about to
+	 * end execution.
+	 */
+	 
+	outputFile << "CALL Target Calculation stats:" << endl;
+	outputFile << "Total found: " << dec << totalFound << endl;
+	outputFile << "Total correct: " << dec << totalCorrect << endl;
+	outputFile << "Total new CALLs: " << dec << totalErrors << endl;
 	
-	outputFile << "Correct ones:" << endl;
-	for (auto it = correct.begin(); it != correct.end(); it++)
-		outputFile << "\t" << *it << endl;
-	
-	outputFile << endl;
-	outputFile << "Incorrect ones:" << endl;
-	for (auto it = incorrect.begin(); it != incorrect.end(); it++)
-		outputFile << "\t" << *it;
+	outputFile << "Total CALLs in executable sections: " << dec << \
+		totalExecutable << endl;
 	
     outputFile.close();
 }
