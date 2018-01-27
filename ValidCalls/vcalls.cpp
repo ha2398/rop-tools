@@ -17,19 +17,18 @@
 
 using namespace std;
 
-enum callOpcode {
-	opE8, op9A, opFF
-};
-
 /**
  * Global Variables.
  */
-static ofstream outputFile;
-map<string, string> calls;
-unsigned long totalFound = 0;
-unsigned long totalCorrect = 0;
-unsigned long totalErrors = 0;
-unsigned long totalExecutable = 0;
+ 
+enum callOpcode {
+	opE8, op9A, opFF
+}; 
+
+static ofstream outputFile; // Output file
+map<string,string> calls; // Map with (Address->Call hex dump) setup
+map<string,int> validCounts; // Number of times each CALL was valid
+unsigned long retCount = 0; // Number of RET instructions found 
 
 INT32 PrintUsage() {
 	/**
@@ -78,6 +77,7 @@ VOID readInputData(string callListFileName) {
 		addr.erase(length-1, 1);
 		
 		calls[addr] = dump;
+		validCounts[addr] = 0;
 	}
 		
     callListFile.close();
@@ -224,10 +224,8 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 		break;
 		
 	case op9A: // Call far, absolute
-		operandSize = (dump.substr(6).length()) * 4; // Operand size in bits
-		segment = hexToInt(operand.substr(0, 4));
-		offset = hexToInt(operand.substr(4));
-		target = (segment * (operandSize)) + offset;		
+		operand = reverseByteOrder(dump.substr(6));
+		target = hexToInt(operand);
 		break;
 		
 	case opFF: // Call near, absolute indirect OR Call far, absolute indirect.
@@ -370,39 +368,50 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 	return target;
 }
 
-VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) {
+bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 	/**
-	 * Pintool analysis function for CALLs.
+	 * Check if a particular CALL instruction is valid or not.
+	 * 
+	 * - Indirect Calls are considered valid iff its address is in the last
+	 * written position of the LBR. It means this was the last call executed.
+	 * - Direct Calls are considered valid iff their target address is
+	 * executable.
+	 *
+	 * @ctxt: Pointer to CPU context Pin object.
+	 * @addr: The instruction's address.
+	 * @dump: The instruction's hexadecimal dump.
 	 */
-	 
-	stringstream ss;
-	ss << hex << ip;
-	string key("0x" + ss.str());
 	
-	auto search = calls.find(key);
-	
-	if (search == calls.end()) {
-		totalErrors++;
-		return;
-	}
-	
-	totalFound++;
-	
-	string dump = search->second;	
-	long calculatedTarget = getCallTarget(ctxt, ip, dump);
-	
-	if (isAddrExecutable(calculatedTarget))
-		totalExecutable++;
+	return true;
+}
 
-	if (calculatedTarget != target) {
-		string opcode = (!dump.substr(0, 2).compare("FF")) ? \
-			dump.substr(0, 4) : dump.substr(0, 2);
-	} else {
-		string opcode = (!dump.substr(0, 2).compare("FF")) ? \
-			dump.substr(0, 4) : dump.substr(0, 2);
+VOID checkValidCalls(const CONTEXT *ctxt) {
+	/**
+	 * Check which of the CALL instructions in the input data are valid for the
+	 * curret RET instruction.
+	 *
+	 * @ctxt: Pointer to Pin's current CONTEXT object.
+	 */
 	
-		totalCorrect++;
+	for (auto it = calls.begin(); it != calls.end(); it++) {
+		string addrStr = it->first;
+		ADDRINT address = hexToInt(addrStr);
+		string dump = it->second;
+		
+		if (isCallValid(ctxt, address, dump))
+			validCounts[addrStr]++;
 	}
+}
+
+VOID doRET(const CONTEXT *ctxt) {
+	/**
+	 * Pintool analysis function for return instructions.
+	 *
+	 * @ctxt: Pointer to Pin's current CONTEXT object.
+	 */
+	
+	retCount++;
+	checkValidCalls(ctxt);
 }
 
 VOID InstrumentCode(TRACE trace, VOID *v) {
@@ -416,36 +425,21 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
 	 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
         INS tail = BBL_InsTail(bbl);
-
-        if (INS_IsCall(tail)) { // Instrument CALLs
-			if (INS_IsDirectBranchOrCall(tail)) { // Direct CALLs
-				ADDRINT target = INS_DirectBranchOrCallTargetAddress(tail);
-				
-				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR)doCall, \
-					IARG_INST_PTR, IARG_ADDRINT, target, IARG_CONTEXT, \
-					IARG_END);
-			} else { // Indirect CALLs
-				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR)doCall, \
-					IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR, IARG_CONTEXT, \
-					IARG_END);
-			}
-        }
+		
+		if (INS_IsRet(tail))
+			INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doRET, \
+			IARG_CONTEXT, IARG_END);
     }
 }
 
 VOID Fini(INT32 code, VOID *v) {
 	/**
-	 * Perform necessary operations when the instrumented application is about to
-	 * end execution.
+	 * Perform necessary operations when the instrumented application is about
+	 * to end execution.
 	 */
-	 
-	outputFile << "CALL Target Calculation stats:" << endl;
-	outputFile << "Total found: " << dec << totalFound << endl;
-	outputFile << "Total correct: " << dec << totalCorrect << endl;
-	outputFile << "Total new CALLs: " << dec << totalErrors << endl;
 	
-	outputFile << "Total CALLs in executable sections: " << dec << \
-		totalExecutable << endl;
+	for (auto it = validCounts.begin(); it != validCounts.end(); it++)
+		outputFile << it->first << ": " << it->second << endl;
 	
     outputFile.close();
 }
