@@ -28,7 +28,48 @@ enum callOpcode {
 static ofstream outputFile; // Output file
 map<string,string> calls; // Map with (Address->Call hex dump) setup
 map<string,int> validCounts; // Number of times each CALL was valid
-unsigned long retCount = 0; // Number of RET instructions found 
+unsigned long retCount = 0; // Number of RET instructions found
+
+/**
+ * LBR (Last Branch Record) data structure.
+ */
+unsigned short lbrCapacity = 16;
+
+class LBR {
+private:
+	ADDRINT buffer [lbrCapacity + 1];
+	unsigned short head, tail, size;
+public:
+	LBR() {
+		head = tail = 0;
+	}
+	
+	bool empty() {
+		head == tail;
+	}
+	
+	bool full() {
+		((tail + 1) % lbrCapacity) == head;
+	}
+	
+	void put(ADDRINT item) {
+		buffer[head] = item;
+		head = (head + 1) % lbrCapacity;
+		
+		if (head == tail) {
+			tail = (tail + 1) % lbrCapacity;
+		}
+	}
+	
+	ADDRINT getLastCall() {
+		if (empty())
+			return 0;
+		
+		return buffer[(head - 1) % lbrCapacity];
+	}
+};
+
+ADDRINT LBR [lbrSize];
 
 INT32 PrintUsage() {
 	/**
@@ -79,7 +120,8 @@ VOID readInputData(string callListFileName) {
 		calls[addr] = dump;
 		validCounts[addr] = 0;
 	}
-		
+	
+	cerr << "CALLs in input file: " << calls.size() << endl;
     callListFile.close();
 	return;
 }
@@ -382,7 +424,7 @@ bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 	 * @dump: The instruction's hexadecimal dump.
 	 */
 	
-	return true;
+	return false;
 }
 
 VOID checkValidCalls(const CONTEXT *ctxt) {
@@ -411,6 +453,7 @@ VOID doRET(const CONTEXT *ctxt) {
 	 */
 	
 	retCount++;
+	cerr << "RET number " << retCount << endl;
 	checkValidCalls(ctxt);
 }
 
