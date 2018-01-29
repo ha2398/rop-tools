@@ -26,14 +26,16 @@ enum callOpcode {
 }; 
 
 static ofstream outputFile; // Output file
-map<string,string> calls; // Map with (Address->Call hex dump) setup
+map<string,string> directCalls; // (Address->Direct Call hex dump) map
+map<string,string> indirectCalls; // (Address->Indirect Call hex dump) map
 map<string,int> validCounts; // Number of times each CALL was valid
 unsigned long retCount = 0; // Number of RET instructions found
+bool directCallsChecked = false; // Direct calls validity already checked
 
 /**
  * LBR (Last Branch Record) data structure.
  */
-unsigned short lbrCapacity = 16;
+const unsigned short lbrCapacity = 16;
 
 class LBR {
 private:
@@ -45,11 +47,11 @@ public:
 	}
 	
 	bool empty() {
-		head == tail;
+		return (head == tail);
 	}
 	
 	bool full() {
-		((tail + 1) % lbrCapacity) == head;
+		return ((tail + 1) % lbrCapacity) == head;
 	}
 	
 	void put(ADDRINT item) {
@@ -69,8 +71,6 @@ public:
 	}
 };
 
-ADDRINT LBR [lbrSize];
-
 INT32 PrintUsage() {
 	/**
 	 * Print the correct usage of the pintool.
@@ -89,7 +89,7 @@ INT32 PrintUsage() {
     return -1;
 }
 
-VOID readInputData(string callListFileName) {
+INT32 readInputData(string callListFileName) {
 	/**
 	 * Initialize the necessary data for the Pintool.
 	 *
@@ -98,12 +98,14 @@ VOID readInputData(string callListFileName) {
 	 * instructions in the input file and their hexadecimal dump.
 	 */
 	 
+	unsigned int numberCalls;
+	 
     ifstream callListFile;
 	callListFile.open(callListFileName.c_str());
 	
 	if (!callListFile) {
 		cerr << "[Error] Couldn't open call list file." << endl;
-		return;
+		return 1;
 	}
 
     string line;
@@ -117,13 +119,22 @@ VOID readInputData(string callListFileName) {
 		int length = addr.length();
 		addr.erase(length-1, 1);
 		
-		calls[addr] = dump;
+		if (dump[0] == 'F')
+			indirectCalls[addr] = dump;
+		else
+			directCalls[addr] = dump;
+	
 		validCounts[addr] = 0;
 	}
 	
-	cerr << "CALLs in input file: " << calls.size() << endl;
+	numberCalls = indirectCalls.size() + directCalls.size();
+	
+	cerr << "Direct CALLs in input file: " << directCalls.size() << endl;
+	cerr << "Indirect CALLs in input file: " << indirectCalls.size() << endl;
+	
     callListFile.close();
-	return;
+	
+	return (numberCalls == 0 ? 1 : 0);
 }
 
 string reverseByteOrder(string const& bytes) {
@@ -435,7 +446,22 @@ VOID checkValidCalls(const CONTEXT *ctxt) {
 	 * @ctxt: Pointer to Pin's current CONTEXT object.
 	 */
 	
-	for (auto it = calls.begin(); it != calls.end(); it++) {
+	// Check direct calls
+	if (!directCallsChecked) {
+		for (auto it = directCalls.begin(); it != directCalls.end(); it++) {
+			string addrStr = it->first;
+			ADDRINT address = hexToInt(addrStr);
+			string dump = it->second;
+			
+			if (isCallValid(ctxt, address, dump))
+				validCounts[addrStr]++;
+		}
+		
+		directCallsChecked = true;
+	}
+	
+	// Check indirect calls
+	for (auto it = indirectCalls.begin(); it != indirectCalls.end(); it++) {
 		string addrStr = it->first;
 		ADDRINT address = hexToInt(addrStr);
 		string dump = it->second;
@@ -481,8 +507,15 @@ VOID Fini(INT32 code, VOID *v) {
 	 * to end execution.
 	 */
 	
-	for (auto it = validCounts.begin(); it != validCounts.end(); it++)
-		outputFile << it->first << ": " << it->second << endl;
+	outputFile << "DIRECT CALLs:" << endl;
+	for (auto it = directCalls.begin(); it != directCalls.end(); it++)
+		outputFile << it->first << ": " << validCounts[it->first] << endl;
+	
+	outputFile << endl;
+	
+	outputFile << "INDIRECT CALLs:" << endl;
+	for (auto it = indirectCalls.begin(); it != indirectCalls.end(); it++)
+		outputFile << it->first << ": " << validCounts[it->first] << endl;
 	
     outputFile.close();
 }
@@ -508,11 +541,9 @@ int main(int argc, char *argv[])
     }
 
     // Get CALL addresses.
-    readInputData(inFileKnob.Value().c_str());
-	
-	if (calls.empty()) {
-		cerr << "[Error] Couldn't build call list." << endl;
-		return -1;
+    if (readInputData(inFileKnob.Value().c_str())) {
+		cerr << "[Error] No CALL was found in the input file." << endl;
+		return 0;
 	}
 
     TRACE_AddInstrumentFunction(InstrumentCode, 0);
