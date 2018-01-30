@@ -65,9 +65,9 @@ enum callOpcode {
 }; 
 
 static ofstream outputFile; // Output file
-map<string,string> directCalls; // (Address->Direct Call hex dump) map
-map<string,string> indirectCalls; // (Address->Indirect Call hex dump) map
-map<string,int> validCounts; // Number of times each CALL was valid
+map<ADDRINT,string> directCalls; // (Address->Direct Call hex dump) map
+map<ADDRINT,string> indirectCalls; // (Address->Indirect Call hex dump) map
+map<ADDRINT,int> validCounts; // Number of times each CALL was valid
 unsigned long retCount = 0; // Number of RET instructions found
 bool directCallsChecked = false; // Direct calls validity already checked
 LBR callLBR; // CALL LBR
@@ -97,6 +97,29 @@ INT32 PrintUsage() {
         " (default: call.txt)\n\n";
 
     return -1;
+}
+
+long int hexToInt(string in) {
+	/**
+	 * Convert a string that represents a sequence of bytes in hexadecimal
+	 * notation to a two's complement number (signed integer) equivalent to the
+	 * hex bytes.
+	 * 
+	 * @in: String that represents a sequence of bytes in hexadecimal notation.
+	 * @return: Two's complement number (signed integer) equivalent to the
+	 * input hex bytes.
+	 */
+	 
+	int bits = in.length() * 4;
+	char *endPtr;
+	long long int result;
+
+	result = strtoll(in.c_str(), &endPtr, 16);
+
+	if (result >= (1LL << (bits - 1)))
+		result -= (1LL << bits);
+
+	return result;
 }
 
 bool isDirectCall(string dump) {
@@ -132,13 +155,15 @@ INT32 readInputData(string callListFileName) {
     string line;
     while (getline(callListFile, line)) {
 		istringstream iss(line);
-		string addr, dump;
+		string addrStr, dump;
+		ADDRINT addr;
 		
-		getline(iss, addr, ' ');
+		getline(iss, addrStr, ' ');
 		getline(iss, dump, ' ');
 		
-		int length = addr.length();
-		addr.erase(length-1, 1);
+		int length = addrStr.length();
+		addrStr.erase(length-1, 1);
+		addr = hexToInt(addrStr);
 		
 		if (!isDirectCall(dump))
 			indirectCalls[addr] = dump;
@@ -191,29 +216,6 @@ callOpcode getOpcodeCode(string const& opcode) {
 		return op9A;
 	else
 		return opFF;
-}
-
-long int hexToInt(string in) {
-	/**
-	 * Convert a string that represents a sequence of bytes in hexadecimal
-	 * notation to a two's complement number (signed integer) equivalent to the
-	 * hex bytes.
-	 * 
-	 * @in: String that represents a sequence of bytes in hexadecimal notation.
-	 * @return: Two's complement number (signed integer) equivalent to the
-	 * input hex bytes.
-	 */
-	 
-	int bits = in.length() * 4;
-	char *endPtr;
-	long long int result;
-
-	result = strtoll(in.c_str(), &endPtr, 16);
-
-	if (result >= (1LL << (bits - 1)))
-		result -= (1LL << bits);
-
-	return result;
 }
 
 BOOL isAddrExecutable(ADDRINT address) {
@@ -476,12 +478,11 @@ VOID checkValidCalls(const CONTEXT *ctxt) {
 	// Check direct calls
 	if (!directCallsChecked) {
 		for (auto it = directCalls.begin(); it != directCalls.end(); it++) {
-			string addrStr = it->first;
-			ADDRINT address = hexToInt(addrStr);
+			ADDRINT address = it->first;
 			string dump = it->second;
 			
 			if (isCallValid(ctxt, address, dump))
-				validCounts[addrStr]++;
+				validCounts[address]++;
 		}
 		
 		directCallsChecked = true;
@@ -489,12 +490,11 @@ VOID checkValidCalls(const CONTEXT *ctxt) {
 	
 	// Check indirect calls
 	for (auto it = indirectCalls.begin(); it != indirectCalls.end(); it++) {
-		string addrStr = it->first;
-		ADDRINT address = hexToInt(addrStr);
+		ADDRINT address = it->first;
 		string dump = it->second;
 		
 		if (isCallValid(ctxt, address, dump))
-			validCounts[addrStr]++;
+			validCounts[address]++;
 	}
 }
 
@@ -550,13 +550,15 @@ VOID Fini(INT32 code, VOID *v) {
 	
 	outputFile << "DIRECT CALLs:" << endl;
 	for (auto it = directCalls.begin(); it != directCalls.end(); it++)
-		outputFile << it->first << ": " << validCounts[it->first] << endl;
+		outputFile << hex << it->first << ": " << dec << \
+			validCounts[it->first] << endl;
 	
 	outputFile << endl;
 	
 	outputFile << "INDIRECT CALLs:" << endl;
 	for (auto it = indirectCalls.begin(); it != indirectCalls.end(); it++)
-		outputFile << it->first << ": " << validCounts[it->first] << endl;
+		outputFile << hex << it->first << ": " << dec << \
+			validCounts[it->first] << endl;
 	
     outputFile.close();
 }
