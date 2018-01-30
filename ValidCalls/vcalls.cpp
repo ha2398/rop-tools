@@ -70,7 +70,12 @@ map<ADDRINT,string> indirectCalls; // (Address->Indirect Call hex dump) map
 map<ADDRINT,int> validCounts; // Number of times each CALL was valid
 unsigned long retCount = 0; // Number of RET instructions found
 bool directCallsChecked = false; // Direct calls validity already checked
+
 LBR callLBR; // CALL LBR
+int callLBRMatches = 0;
+
+LBR indirectCallLBR; // Indirect CALLs LBR
+int indirectCallLBRMatches = 0;
 
 // Get the input file name from the command line (-i flag).
 KNOB<string> inFileKnob(KNOB_MODE_WRITEONCE, "pintool", "i",
@@ -498,16 +503,43 @@ VOID checkValidCalls(const CONTEXT *ctxt) {
 	}
 }
 
-VOID doRET(const CONTEXT *ctxt) {
+VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 	/**
 	 * Pintool analysis function for return instructions.
 	 *
-	 * @ctxt: Pointer to Pin's current CONTEXT object.
+	 * @ctxt: Pointer to Pin's current CONTEXT object
+	 * @returnAddr: Return address.
 	 */
 	
 	retCount++;
 	cerr << "RET number " << retCount << endl;
-	checkValidCalls(ctxt);
+	//checkValidCalls(ctxt);
+	
+	/**
+	 * Experiment 1 - LBR Matches.
+	 *
+	 * Candidate CALL can be from 2 to 7 bytes before the return address.
+	 */
+	
+	for (int i = 2; i <= 7; i++) {
+		ADDRINT candidate = returnAddr - i;
+		
+		if (candidate == callLBR.getLastCall()) {
+			callLBRMatches++;
+			break;
+		}
+	}
+	
+	for (int i = 2; i <= 7; i++) {
+		ADDRINT candidate = returnAddr - i;
+		
+		if (candidate == indirectCallLBR.getLastCall()) {
+			indirectCallLBRMatches++;
+			break;
+		}
+	}
+	
+	
 }
 
 VOID doCALL(ADDRINT addr) {
@@ -518,6 +550,7 @@ VOID doCALL(ADDRINT addr) {
 	 */
 	
 	callLBR.put(addr);
+	indirectCallLBR.put(addr);
 }
 
 VOID InstrumentCode(TRACE trace, VOID *v) {
@@ -534,9 +567,8 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
 		
 		if (INS_IsRet(tail))
 			INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doRET, \
-			IARG_CONTEXT, IARG_END);
-			
-		if (INS_IsCall(tail))
+			IARG_CONTEXT, IARG_BRANCH_TARGET_ADDR, IARG_END);
+		else if (INS_IsCall(tail))
 			INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doCALL, \
 			IARG_INST_PTR, IARG_END);
     }
@@ -548,6 +580,9 @@ VOID Fini(INT32 code, VOID *v) {
 	 * to end execution.
 	 */
 	
+	/*
+	// Reports for valid calls.
+	 
 	outputFile << "DIRECT CALLs:" << endl;
 	for (auto it = directCalls.begin(); it != directCalls.end(); it++)
 		outputFile << hex << it->first << ": " << dec << \
@@ -559,6 +594,14 @@ VOID Fini(INT32 code, VOID *v) {
 	for (auto it = indirectCalls.begin(); it != indirectCalls.end(); it++)
 		outputFile << hex << it->first << ": " << dec << \
 			validCounts[it->first] << endl;
+			
+	*/
+	
+	// Reports for Experiment 1.
+	outputFile << "Number of RET instructions: " << retCount << endl;
+	outputFile << "CALL LBR Matches: " << callLBRMatches << endl;
+	outputFile << "Indirect CALL LBR Matches: " << indirectCallLBRMatches << \
+		endl;
 	
     outputFile.close();
 }
