@@ -18,21 +18,6 @@
 using namespace std;
 
 /**
- * Global Variables.
- */
- 
-enum callOpcode {
-	opE8, op9A, opFF
-}; 
-
-static ofstream outputFile; // Output file
-map<string,string> directCalls; // (Address->Direct Call hex dump) map
-map<string,string> indirectCalls; // (Address->Indirect Call hex dump) map
-map<string,int> validCounts; // Number of times each CALL was valid
-unsigned long retCount = 0; // Number of RET instructions found
-bool directCallsChecked = false; // Direct calls validity already checked
-
-/**
  * LBR (Last Branch Record) data structure.
  */
 const unsigned short lbrCapacity = 16;
@@ -71,6 +56,31 @@ public:
 	}
 };
 
+/**
+ * Global Variables.
+ */
+ 
+enum callOpcode {
+	opE8, op9A, opFF
+}; 
+
+static ofstream outputFile; // Output file
+map<string,string> directCalls; // (Address->Direct Call hex dump) map
+map<string,string> indirectCalls; // (Address->Indirect Call hex dump) map
+map<string,int> validCounts; // Number of times each CALL was valid
+unsigned long retCount = 0; // Number of RET instructions found
+bool directCallsChecked = false; // Direct calls validity already checked
+LBR callLBR; // CALL LBR
+
+// Get the input file name from the command line (-i flag).
+KNOB<string> inFileKnob(KNOB_MODE_WRITEONCE, "pintool", "i",
+	"call.txt", "Input file name -- this file must contain the list of"
+	"addresses in memory that contain CALL instructions");
+
+// Get the output file name from the command line (-o flag).
+KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
+	"pintool.out", "Output file name");
+
 INT32 PrintUsage() {
 	/**
 	 * Print the correct usage of the pintool.
@@ -87,6 +97,17 @@ INT32 PrintUsage() {
         " (default: call.txt)\n\n";
 
     return -1;
+}
+
+bool isDirectCall(string dump) {
+	/**
+	 * Check if a given CALL instruction is a direct CALL.
+	 *
+	 * @dump: The instruction's hexadecimal dump.
+	 * @return: True, iff, the instruction is a direct CALL. False otherwise.
+	 */
+	
+	return (dump[0] != 'F');
 }
 
 INT32 readInputData(string callListFileName) {
@@ -119,7 +140,7 @@ INT32 readInputData(string callListFileName) {
 		int length = addr.length();
 		addr.erase(length-1, 1);
 		
-		if (dump[0] == 'F')
+		if (!isDirectCall(dump))
 			indirectCalls[addr] = dump;
 		else
 			directCalls[addr] = dump;
@@ -435,7 +456,13 @@ bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 	 * @dump: The instruction's hexadecimal dump.
 	 */
 	
-	return false;
+	if (isDirectCall(dump)) { // Direct CALLs
+		ADDRINT target = getCallTarget(ctxt, addr, dump);
+		return isAddrExecutable(target);
+	} else { // Indirect CALLs
+		ADDRINT lastCall = callLBR.getLastCall();
+		return (lastCall == addr);
+	}
 }
 
 VOID checkValidCalls(const CONTEXT *ctxt) {
@@ -483,6 +510,16 @@ VOID doRET(const CONTEXT *ctxt) {
 	checkValidCalls(ctxt);
 }
 
+VOID doCALL(ADDRINT addr) {
+	/**
+	 * Pintool analysis fuction for call instructions.
+	 *
+	 * @addr: The instruction's address.
+	 */
+	
+	callLBR.put(addr);
+}
+
 VOID InstrumentCode(TRACE trace, VOID *v) {
     /**
 	 * Pintool instrumentation function.
@@ -498,6 +535,10 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
 		if (INS_IsRet(tail))
 			INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doRET, \
 			IARG_CONTEXT, IARG_END);
+			
+		if (INS_IsCall(tail))
+			INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doCALL, \
+			IARG_INST_PTR, IARG_END);
     }
 }
 
@@ -522,16 +563,7 @@ VOID Fini(INT32 code, VOID *v) {
 
 int main(int argc, char *argv[])
 {
-    // Get the input file name from the command line (-i flag).
-    KNOB<string> inFileKnob(KNOB_MODE_WRITEONCE, "pintool", "i",
-        "call.txt", "Input file name -- this file must contain the list of"
-        "addresses in memory that contain CALL instructions");
-
-    // Get the output file name from the command line (-o flag).
-    KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
-        "pintool.out", "Output file name");
-		
-	// Open the output file.
+    // Open the output file.
     outputFile.open(outFileKnob.Value().c_str(), \
         std::ofstream::out | std::ofstream::app);
 	
