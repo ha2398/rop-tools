@@ -68,7 +68,6 @@ static ofstream outputFile; // Output file
 map<ADDRINT,string> directCalls; // (Address->Direct Call hex dump) map
 map<ADDRINT,string> indirectCalls; // (Address->Indirect Call hex dump) map
 map<ADDRINT,int> validCounts; // Number of times each CALL was valid
-unsigned long retCount = 0; // Number of RET instructions found
 bool directCallsChecked = false; // Direct calls validity already checked
 
 LBR callLBR; // CALL LBR
@@ -76,6 +75,10 @@ int callLBRMatches = 0;
 
 LBR indirectCallLBR; // Indirect CALLs LBR
 int indirectCallLBRMatches = 0;
+
+unsigned long retCount = 0; // Number of RET found
+unsigned long callCount = 0; // Number of CALL found
+unsigned long indirectCallCount = 0; // Number of indirect CALL found
 
 // Get the input file name from the command line (-i flag).
 KNOB<string> inFileKnob(KNOB_MODE_WRITEONCE, "pintool", "i",
@@ -542,13 +545,25 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 	
 }
 
-VOID doCALL(ADDRINT addr) {
+VOID doDirectCALL(ADDRINT addr) {
 	/**
-	 * Pintool analysis fuction for call instructions.
+	 * Pintool analysis fuction for direct call instructions.
 	 *
 	 * @addr: The instruction's address.
 	 */
 	
+	callCount++;
+	callLBR.put(addr);
+}
+
+VOID doIndirectCALL(ADDRINT addr) {
+	/**
+	 * Pintool analysis fuction for indirect call instructions.
+	 *
+	 * @addr: The instruction's address.
+	 */
+	callCount++;
+	indirectCallCount++;
 	callLBR.put(addr);
 	indirectCallLBR.put(addr);
 }
@@ -565,12 +580,18 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
         INS tail = BBL_InsTail(bbl);
 		
-		if (INS_IsRet(tail))
+		if (INS_IsRet(tail)) {
 			INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doRET, \
 			IARG_CONTEXT, IARG_BRANCH_TARGET_ADDR, IARG_END);
-		else if (INS_IsCall(tail))
-			INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doCALL, \
-			IARG_INST_PTR, IARG_END);
+		} else if (INS_IsCall(tail)) {
+			if (INS_IsDirectCall(tail)
+				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doDirectCALL, \
+					IARG_INST_PTR, IARG_END);
+			else
+				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doIndirectCALL, \
+					IARG_INST_PTR, IARG_END);
+		}
+			
     }
 }
 
