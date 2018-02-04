@@ -20,12 +20,12 @@ using namespace std;
 /**
  * LBR (Last Branch Record) data structure.
  */
-const unsigned short lbrCapacity = 16;
+const unsigned short lbrCapacity = 32;
 
 class LBR {
 private:
 	ADDRINT buffer [lbrCapacity + 1];
-	unsigned short head, tail, size;
+	unsigned short head, tail;
 public:
 	LBR() {
 		head = tail = 0;
@@ -35,17 +35,19 @@ public:
 		return (head == tail);
 	}
 	
-	bool full() {
-		return ((tail + 1) % lbrCapacity) == head;
-	}
-	
 	void put(ADDRINT item) {
 		buffer[head] = item;
 		head = (head + 1) % lbrCapacity;
 		
-		if (head == tail) {
+		if (head == tail)
 			tail = (tail + 1) % lbrCapacity;
-		}
+	}
+	
+	void pop() {
+		if (empty())
+			return; 
+		
+		head = (head - 1) % lbrCapacity;
 	}
 	
 	ADDRINT getLastCall() {
@@ -76,9 +78,9 @@ int callLBRMatches = 0;
 LBR indirectCallLBR; // Indirect CALLs LBR
 int indirectCallLBRMatches = 0;
 
-unsigned long retCount = 0; // Number of RET found
-unsigned long callCount = 0; // Number of CALL found
-unsigned long indirectCallCount = 0; // Number of indirect CALL found
+unsigned long retCount = 0; // Number of RETs found
+unsigned long directCallCount = 0; // Number of direct CALLs found
+unsigned long indirectCallCount = 0; // Number of indirect CALLs found
 
 // Get the input file name from the command line (-i flag).
 KNOB<string> inFileKnob(KNOB_MODE_WRITEONCE, "pintool", "i",
@@ -513,7 +515,8 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 	 * @ctxt: Pointer to Pin's current CONTEXT object
 	 * @returnAddr: Return address.
 	 */
-	
+	 
+	ADDRINT lastCall;
 	retCount++;
 	cerr << "RET number " << retCount << endl;
 	//checkValidCalls(ctxt);
@@ -524,25 +527,27 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 	 * Candidate CALL can be from 2 to 7 bytes before the return address.
 	 */
 	
+	lastCall = callLBR.getLastCall();
 	for (int i = 2; i <= 7; i++) {
 		ADDRINT candidate = returnAddr - i;
 		
-		if (candidate == callLBR.getLastCall()) {
+		if (candidate == lastCall) {
 			callLBRMatches++;
 			break;
 		}
 	}
 	
+	lastCall = indirectCallLBR.getLastCall();
 	for (int i = 2; i <= 7; i++) {
 		ADDRINT candidate = returnAddr - i;
 		
-		if (candidate == indirectCallLBR.getLastCall()) {
+		if (candidate == lastCall) {
 			indirectCallLBRMatches++;
 			break;
 		}
 	}
 	
-	
+	callLBR.pop();
 }
 
 VOID doDirectCALL(ADDRINT addr) {
@@ -552,7 +557,7 @@ VOID doDirectCALL(ADDRINT addr) {
 	 * @addr: The instruction's address.
 	 */
 	
-	callCount++;
+	directCallCount++;
 	callLBR.put(addr);
 }
 
@@ -562,7 +567,7 @@ VOID doIndirectCALL(ADDRINT addr) {
 	 *
 	 * @addr: The instruction's address.
 	 */
-	callCount++;
+	 
 	indirectCallCount++;
 	callLBR.put(addr);
 	indirectCallLBR.put(addr);
