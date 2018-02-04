@@ -36,25 +36,31 @@ public:
 	}
 	
 	void put(ADDRINT item) {
+		cerr << "put in head " << head << endl;
 		buffer[head] = item;
-		head = (head + 1) % lbrCapacity;
+		head = (unsigned short) (head + 1) % lbrCapacity;
 		
 		if (head == tail)
-			tail = (tail + 1) % lbrCapacity;
+			tail = (unsigned short) (tail + 1) % lbrCapacity;
+		cin.ignore();
 	}
 	
 	void pop() {
 		if (empty())
 			return; 
 		
-		head = (head - 1) % lbrCapacity;
+		head = (unsigned short) (head - 1) % lbrCapacity;
+		cin.ignore();
 	}
 	
 	ADDRINT getLastCall() {
 		if (empty())
 			return 0;
 		
-		return buffer[(head - 1) % lbrCapacity];
+		unsigned short index = (unsigned short) (head - 1) % lbrCapacity;
+		cin.ignore();
+		
+		return buffer[index];
 	}
 };
 
@@ -527,6 +533,7 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 	 * Candidate CALL can be from 2 to 7 bytes before the return address.
 	 */
 	
+	cerr << "1" << endl;
 	lastCall = callLBR.getLastCall();
 	for (int i = 2; i <= 7; i++) {
 		ADDRINT candidate = returnAddr - i;
@@ -537,6 +544,7 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 		}
 	}
 	
+	cerr << "2" << endl;
 	lastCall = indirectCallLBR.getLastCall();
 	for (int i = 2; i <= 7; i++) {
 		ADDRINT candidate = returnAddr - i;
@@ -547,7 +555,9 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 		}
 	}
 	
+	cerr << "3" << endl;
 	callLBR.pop();
+	cerr << "4" << endl;
 }
 
 VOID doDirectCALL(ADDRINT addr) {
@@ -557,8 +567,11 @@ VOID doDirectCALL(ADDRINT addr) {
 	 * @addr: The instruction's address.
 	 */
 	
+	cerr << "Direct CALL number " << directCallCount << endl;
 	directCallCount++;
+	cerr << "1" << endl;
 	callLBR.put(addr);
+	cerr << "Exiting" << endl;
 }
 
 VOID doIndirectCALL(ADDRINT addr) {
@@ -567,10 +580,12 @@ VOID doIndirectCALL(ADDRINT addr) {
 	 *
 	 * @addr: The instruction's address.
 	 */
-	 
+	
+	cerr << "Indirect CALL number " << directCallCount << endl;	
 	indirectCallCount++;
 	callLBR.put(addr);
 	indirectCallLBR.put(addr);
+	cerr << "Exiting" << endl;
 }
 
 VOID InstrumentCode(TRACE trace, VOID *v) {
@@ -625,6 +640,10 @@ VOID Fini(INT32 code, VOID *v) {
 	
 	// Reports for Experiment 1.
 	outputFile << "Number of RET instructions: " << retCount << endl;
+	outputFile << "Number of Direct CALL instructions: " << \
+		directCallCount << endl;
+	outputFile << "Number of Indirect CALL instructions: " << \
+		indirectCallCount << endl;
 	outputFile << "CALL LBR Matches: " << callLBRMatches << endl;
 	outputFile << "Indirect CALL LBR Matches: " << indirectCallLBRMatches << \
 		endl;
