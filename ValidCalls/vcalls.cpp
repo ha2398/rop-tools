@@ -36,13 +36,11 @@ public:
 	}
 	
 	void put(ADDRINT item) {
-		cerr << "put in head " << head << endl;
 		buffer[head] = item;
 		head = (unsigned short) (head + 1) % lbrCapacity;
 		
 		if (head == tail)
 			tail = (unsigned short) (tail + 1) % lbrCapacity;
-		cin.ignore();
 	}
 	
 	void pop() {
@@ -50,7 +48,6 @@ public:
 			return; 
 		
 		head = (unsigned short) (head - 1) % lbrCapacity;
-		cin.ignore();
 	}
 	
 	ADDRINT getLastCall() {
@@ -58,7 +55,6 @@ public:
 			return 0;
 		
 		unsigned short index = (unsigned short) (head - 1) % lbrCapacity;
-		cin.ignore();
 		
 		return buffer[index];
 	}
@@ -67,6 +63,8 @@ public:
 /**
  * Global Variables.
  */
+
+const string done("\t- Done.");
  
 enum callOpcode {
 	opE8, op9A, opFF
@@ -158,6 +156,7 @@ INT32 readInputData(string callListFileName) {
 	 * instructions in the input file and their hexadecimal dump.
 	 */
 	 
+	cerr << "[+] Reading input file." << endl;
 	unsigned int numberCalls;
 	 
     ifstream callListFile;
@@ -190,12 +189,8 @@ INT32 readInputData(string callListFileName) {
 	}
 	
 	numberCalls = indirectCalls.size() + directCalls.size();
-	
-	cerr << "Direct CALLs in input file: " << directCalls.size() << endl;
-	cerr << "Indirect CALLs in input file: " << indirectCalls.size() << endl;
-	
     callListFile.close();
-	
+	cerr << done << endl;
 	return (numberCalls == 0 ? 1 : 0);
 }
 
@@ -524,7 +519,7 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 	 
 	ADDRINT lastCall;
 	retCount++;
-	cerr << "RET number " << retCount << endl;
+	
 	//checkValidCalls(ctxt);
 	
 	/**
@@ -533,7 +528,6 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 	 * Candidate CALL can be from 2 to 7 bytes before the return address.
 	 */
 	
-	cerr << "1" << endl;
 	lastCall = callLBR.getLastCall();
 	for (int i = 2; i <= 7; i++) {
 		ADDRINT candidate = returnAddr - i;
@@ -544,7 +538,6 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 		}
 	}
 	
-	cerr << "2" << endl;
 	lastCall = indirectCallLBR.getLastCall();
 	for (int i = 2; i <= 7; i++) {
 		ADDRINT candidate = returnAddr - i;
@@ -555,9 +548,7 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 		}
 	}
 	
-	cerr << "3" << endl;
 	callLBR.pop();
-	cerr << "4" << endl;
 }
 
 VOID doDirectCALL(ADDRINT addr) {
@@ -567,11 +558,8 @@ VOID doDirectCALL(ADDRINT addr) {
 	 * @addr: The instruction's address.
 	 */
 	
-	cerr << "Direct CALL number " << directCallCount << endl;
 	directCallCount++;
-	cerr << "1" << endl;
 	callLBR.put(addr);
-	cerr << "Exiting" << endl;
 }
 
 VOID doIndirectCALL(ADDRINT addr) {
@@ -581,11 +569,9 @@ VOID doIndirectCALL(ADDRINT addr) {
 	 * @addr: The instruction's address.
 	 */
 	
-	cerr << "Indirect CALL number " << directCallCount << endl;	
 	indirectCallCount++;
 	callLBR.put(addr);
 	indirectCallLBR.put(addr);
-	cerr << "Exiting" << endl;
 }
 
 VOID InstrumentCode(TRACE trace, VOID *v) {
@@ -615,6 +601,24 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
     }
 }
 
+void printExperiment1Report() {
+	/**
+	 * Print the report for experiment 1.
+	 */
+	
+	outputFile << "Reports for experiment 1 (LBR Match)" << endl;
+	outputFile << "[+] Number of RET instructions:" << endl << \
+		"\t" << retCount << endl;
+	outputFile << "[+] Number of Direct CALL instructions:" << endl << \
+		"\t" << directCallCount << endl;
+	outputFile << "[+] Number of Indirect CALL instructions:" << endl << \
+		"\t" << indirectCallCount << endl;
+	outputFile << "[+] CALL LBR Matches:" << endl << \
+		"\t" << callLBRMatches << endl;
+	outputFile << "[+] Indirect CALL LBR Matches:" << endl << \
+		"\t" << indirectCallLBRMatches << endl;
+}
+
 VOID Fini(INT32 code, VOID *v) {
 	/**
 	 * Perform necessary operations when the instrumented application is about
@@ -638,16 +642,8 @@ VOID Fini(INT32 code, VOID *v) {
 			
 	*/
 	
-	// Reports for Experiment 1.
-	outputFile << "Number of RET instructions: " << retCount << endl;
-	outputFile << "Number of Direct CALL instructions: " << \
-		directCallCount << endl;
-	outputFile << "Number of Indirect CALL instructions: " << \
-		indirectCallCount << endl;
-	outputFile << "CALL LBR Matches: " << callLBRMatches << endl;
-	outputFile << "Indirect CALL LBR Matches: " << indirectCallLBRMatches << \
-		endl;
-	
+	cerr << done << endl;
+	printExperiment1Report();
     outputFile.close();
 }
 
@@ -670,6 +666,7 @@ int main(int argc, char *argv[])
 
     TRACE_AddInstrumentFunction(InstrumentCode, 0);
     PIN_AddFiniFunction(Fini, 0);
+	cerr << "[+] Running application." << endl;
     PIN_StartProgram();
 
     return 0;
