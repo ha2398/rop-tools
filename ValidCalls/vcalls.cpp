@@ -587,9 +587,9 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
 		
 		if (INS_IsRet(tail)) {
 			INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doRET, \
-			IARG_CONTEXT, IARG_BRANCH_TARGET_ADDR, IARG_END);
+				IARG_CONTEXT, IARG_BRANCH_TARGET_ADDR, IARG_END);
 		} else if (INS_IsCall(tail)) {
-			if (INS_IsDirectCall(tail)
+			if (INS_IsDirectCall(tail))
 				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doDirectCALL, \
 					IARG_INST_PTR, IARG_END);
 			else
