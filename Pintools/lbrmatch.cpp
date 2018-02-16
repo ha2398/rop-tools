@@ -76,6 +76,7 @@ int callLBRMatches = 0;
 LBR indirectCallLBR(lbrSizeKnob.Value()); // Indirect CALLs LBR
 int indirectCallLBRMatches = 0;
 
+unsigned long instCount = 0; // Total number of instructions
 unsigned long retCount = 0; // Number of RETs found
 unsigned long directCallCount = 0; // Number of direct CALLs found
 unsigned long indirectCallCount = 0; // Number of indirect CALLs found
@@ -143,6 +144,17 @@ VOID doIndirectCALL(ADDRINT addr) {
 	indirectCallLBR.put(addr);
 }
 
+VOID PIN_FAST_ANALYSIS_CALL doCount(UINT32 numIns) {
+	/**
+	 * Pintool analysis function for counting the number of instructions in
+	 * each basic block.
+	 *
+	 * @numIns: Number of instructions in the current basic block.
+	 */
+	 
+	instCount += numIns;
+}
+
 VOID InstrumentCode(TRACE trace, VOID *v) {
     /**
 	 * Pintool instrumentation function.
@@ -153,6 +165,9 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
      */
 	 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+		BBL_InsertCall(bbl, IPOINT_ANYWHERE, (AFUNPTR) doCount, \
+			IARG_FAST_ANALYSIS_CALL, IARG_UINT32, BBL_NumIns(bbl), IARG_END);	
+		
         INS tail = BBL_InsTail(bbl);
 		
 		if (INS_IsRet(tail)) {
@@ -177,6 +192,8 @@ void printExperimentReport() {
 	
 	outputFile << "Reports for experiment \"LBR Match\" with " << \
 		lbrSizeKnob.Value() << " entries" << endl;
+	outputFile << "[+] Number of instructions executed:" << endl << \
+		"\t" << instCount << endl;
 	outputFile << "[+] Number of RET instructions:" << endl << \
 		"\t" << retCount << endl;
 	outputFile << "[+] Number of Direct CALL instructions:" << endl << \
