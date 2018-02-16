@@ -18,49 +18,6 @@
 using namespace std;
 
 /**
- * LBR (Last Branch Record) data structure.
- */
-const unsigned short lbrCapacity = 32;
-
-class LBR {
-private:
-	ADDRINT buffer [lbrCapacity + 1];
-	unsigned short head, tail;
-public:
-	LBR() {
-		head = tail = 0;
-	}
-	
-	bool empty() {
-		return (head == tail);
-	}
-	
-	void put(ADDRINT item) {
-		buffer[head] = item;
-		head = (unsigned short) (head + 1) % lbrCapacity;
-		
-		if (head == tail)
-			tail = (unsigned short) (tail + 1) % lbrCapacity;
-	}
-	
-	void pop() {
-		if (empty())
-			return; 
-		
-		head = (unsigned short) (head - 1) % lbrCapacity;
-	}
-	
-	ADDRINT getLastCall() {
-		if (empty())
-			return 0;
-		
-		unsigned short index = (unsigned short) (head - 1) % lbrCapacity;
-		
-		return buffer[index];
-	}
-};
-
-/**
  * Global Variables.
  */
 
@@ -76,42 +33,15 @@ map<ADDRINT,string> indirectCalls; // (Address->Indirect Call hex dump) map
 map<ADDRINT,int> validCounts; // Number of times each CALL was valid
 bool directCallsChecked = false; // Direct calls validity already checked
 
-LBR callLBR; // CALL LBR
-int callLBRMatches = 0;
 
-LBR indirectCallLBR; // Indirect CALLs LBR
-int indirectCallLBRMatches = 0;
-
-unsigned long retCount = 0; // Number of RETs found
-unsigned long directCallCount = 0; // Number of direct CALLs found
-unsigned long indirectCallCount = 0; // Number of indirect CALLs found
-
-// Get the input file name from the command line (-i flag).
+// Get the input file name from the command line.
 KNOB<string> inFileKnob(KNOB_MODE_WRITEONCE, "pintool", "i",
 	"call.txt", "Input file name -- this file must contain the list of"
 	"addresses in memory that contain CALL instructions");
 
-// Get the output file name from the command line (-o flag).
+// Get the output file name from the command line.
 KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
-	"pintool.out", "Output file name");
-
-INT32 PrintUsage() {
-	/**
-	 * Print the correct usage of the pintool.
-	 */
-	 
-    cerr << "\nUsage: pin -t <Pintool> [-o <OutputFileName> [-i"
-        " <InputFileName>] -- <Application>\n\n"
-        "Options:\n"
-        "\t-o\t<OutputFileName>\t"
-        "Indicates the name of the output file (default: pintool.out)\n"
-        "\t-i\t<InputFileName>\t"
-        "Indicates the name of the input file name. This file must contain the"
-        " memory locations of the CALL instructions in the application"
-        " (default: call.txt)\n\n";
-
-    return -1;
-}
+	"vcalls_out.log", "Output file name");
 
 long int hexToInt(string in) {
 	/**
@@ -601,33 +531,14 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
     }
 }
 
-void printExperiment1Report() {
-	/**
-	 * Print the report for experiment 1.
-	 */
-	
-	outputFile << "Reports for experiment 1 (LBR Match)" << endl;
-	outputFile << "[+] Number of RET instructions:" << endl << \
-		"\t" << retCount << endl;
-	outputFile << "[+] Number of Direct CALL instructions:" << endl << \
-		"\t" << directCallCount << endl;
-	outputFile << "[+] Number of Indirect CALL instructions:" << endl << \
-		"\t" << indirectCallCount << endl;
-	outputFile << "[+] CALL LBR Matches:" << endl << \
-		"\t" << callLBRMatches << endl;
-	outputFile << "[+] Indirect CALL LBR Matches:" << endl << \
-		"\t" << indirectCallLBRMatches << endl;
-}
-
 VOID Fini(INT32 code, VOID *v) {
 	/**
 	 * Perform necessary operations when the instrumented application is about
 	 * to end execution.
 	 */
-	
-	/*
-	// Reports for valid calls.
 	 
+	// Reports for valid calls.
+
 	outputFile << "DIRECT CALLs:" << endl;
 	for (auto it = directCalls.begin(); it != directCalls.end(); it++)
 		outputFile << hex << it->first << ": " << dec << \
@@ -639,24 +550,18 @@ VOID Fini(INT32 code, VOID *v) {
 	for (auto it = indirectCalls.begin(); it != indirectCalls.end(); it++)
 		outputFile << hex << it->first << ": " << dec << \
 			validCounts[it->first] << endl;
-			
-	*/
-	
-	cerr << done << endl;
-	printExperiment1Report();
-    outputFile.close();
 }
 
 int main(int argc, char *argv[])
 {
-    // Open the output file.
-    outputFile.open(outFileKnob.Value().c_str(), \
-        std::ofstream::out | std::ofstream::app);
-	
     // Start Pin and checks parameters.
     if (PIN_Init(argc, argv)) {
-        return PrintUsage();
+        cerr << "[Error] Could not start Pin." << endl;
+		return -1;
     }
+	
+	// Open the output file.
+    outputFile.open(outFileKnob.Value().c_str());
 
     // Get CALL addresses.
     if (readInputData(inFileKnob.Value().c_str())) {
