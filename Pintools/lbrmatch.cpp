@@ -23,22 +23,30 @@ KNOB<unsigned int> lbrSizeKnob(KNOB_MODE_WRITEONCE, "pintool", "s",
 /**
  * LBR (Last Branch Record) data structure.
  */
+
+/**
+ * A LBR entry is composed by the address of the branch instruction and
+ * a boolean that indicates whether this is a direct branch (true) or
+ * indirect (false).
+ */
+typedef pair<ADDRINT, bool> LBREntry;
+
 class LBR {
 private:
-	ADDRINT *buffer;
+	LBREntry *buffer;
 	unsigned int head, tail, size;
 public:
 	LBR(unsigned int size) {
 		this->size = size;
 		head = tail = 0;
-		buffer = (ADDRINT*) malloc(sizeof(ADDRINT) * (size + 1));
+		buffer = (LBREntry*) malloc(sizeof(LBREntry) * (size + 1));
 	}
 	
 	bool empty() {
 		return (head == tail);
 	}
 	
-	void put(ADDRINT item) {
+	void put(LBREntry item) {
 		buffer[head] = item;
 		head = (unsigned int) (head + 1) % size;
 		
@@ -53,9 +61,9 @@ public:
 		head = (unsigned int) (head - 1) % size;
 	}
 	
-	ADDRINT getLastCall() {
+	LBREntry getLastEntry() {
 		if (empty())
-			return 0;
+			return make_pair(0, false);
 		
 		unsigned int index = (unsigned int) (head - 1) % size;
 		
@@ -71,10 +79,11 @@ const string done("\t- Done.");
 static ofstream outputFile; // Output file
 
 LBR callLBR(lbrSizeKnob.Value()); // CALL LBR
-int callLBRMatches = 0;
+unsigned long callLBRDirectCALLMatches = 0;
+unsigned long callLBRIndirectCALLMatches = 0;
 
 LBR indirectCallLBR(lbrSizeKnob.Value()); // Indirect CALLs LBR
-int indirectCallLBRMatches = 0;
+unsigned long indirectCallLBRMatches = 0;
 
 unsigned long instCount = 0; // Total number of instructions
 unsigned long retCount = 0; // Number of RETs found
@@ -85,34 +94,35 @@ VOID doRET(ADDRINT returnAddr) {
 	/**
 	 * Pintool analysis function for return instructions.
 	 *
-	 * @ctxt: Pointer to Pin's current CONTEXT object
 	 * @returnAddr: Return address.
 	 */
 	 
-	ADDRINT lastCall;
+	LBREntry lastEntry;
 	retCount++;
 	
 	/**
-	 * LBR Matches Experiment.
-	 *
 	 * Candidate CALL can be from 2 to 7 bytes before the return address.
 	 */
 	
-	lastCall = callLBR.getLastCall();
+	lastEntry = callLBR.getLastEntry();
 	for (int i = 2; i <= 7; i++) {
 		ADDRINT candidate = returnAddr - i;
 		
-		if (candidate == lastCall) {
-			callLBRMatches++;
+		if (candidate == lastEntry.first) {
+			if (lastEntry.second)
+				callLBRDirectCALLMatches++;
+			else
+				callLBRIndirectCALLMatches++;
+
 			break;
 		}
 	}
 	
-	lastCall = indirectCallLBR.getLastCall();
+	lastEntry = indirectCallLBR.getLastEntry();
 	for (int i = 2; i <= 7; i++) {
 		ADDRINT candidate = returnAddr - i;
 		
-		if (candidate == lastCall) {
+		if (candidate == lastEntry.first) {
 			indirectCallLBRMatches++;
 			break;
 		}
@@ -129,7 +139,7 @@ VOID doDirectCALL(ADDRINT addr) {
 	 */
 	
 	directCallCount++;
-	callLBR.put(addr);
+	callLBR.put(make_pair(addr, true));
 }
 
 VOID doIndirectCALL(ADDRINT addr) {
@@ -140,8 +150,8 @@ VOID doIndirectCALL(ADDRINT addr) {
 	 */
 	
 	indirectCallCount++;
-	callLBR.put(addr);
-	indirectCallLBR.put(addr);
+	callLBR.put(make_pair(addr, false));
+	indirectCallLBR.put(make_pair(addr, false));
 }
 
 VOID PIN_FAST_ANALYSIS_CALL doCount(UINT32 numIns) {
@@ -191,19 +201,24 @@ void printExperimentReport() {
 	 */
 	
 	outputFile << "Reports for experiment \"LBR Match\" with " << \
-		lbrSizeKnob.Value() << " entries" << endl;
+		lbrSizeKnob.Value() << " entries" << endl << endl;
 	outputFile << "[+] Number of instructions executed:" << endl << \
-		"\t" << instCount << endl;
+		"\t" << instCount << endl << endl;
 	outputFile << "[+] Number of RET instructions:" << endl << \
-		"\t" << retCount << endl;
+		"\t" << retCount << endl << endl;
 	outputFile << "[+] Number of Direct CALL instructions:" << endl << \
-		"\t" << directCallCount << endl;
+		"\t" << directCallCount << endl << endl;
 	outputFile << "[+] Number of Indirect CALL instructions:" << endl << \
-		"\t" << indirectCallCount << endl;
+		"\t" << indirectCallCount << endl << endl;
 	outputFile << "[+] CALL LBR Matches:" << endl << \
-		"\t" << callLBRMatches << endl;
+		"\t" << callLBRDirectCALLMatches + callLBRIndirectCALLMatches << \
+		endl << endl << \
+		"\t[+] Direct CALL Matches:" << endl << \
+		"\t\t" << callLBRDirectCALLMatches << endl << \
+		"\t[+] Indirect CALL Matches:" << endl << \
+		"\t\t" << callLBRIndirectCALLMatches << endl << endl;
 	outputFile << "[+] Indirect CALL LBR Matches:" << endl << \
-		"\t" << indirectCallLBRMatches << endl;
+		"\t" << indirectCallLBRMatches << endl << endl;
 }
 
 VOID Fini(INT32 code, VOID *v) {
