@@ -437,10 +437,19 @@ VOID doRET(ADDRINT returnAddr) {
 	 */
 
 	outputFile << hex;
+	
 	// Get previous 7 bytes (largest CALL size) to return address.
 	UINT64 previousBytes = 0;
 	PIN_SafeCopy(&previousBytes, (ADDRINT*)(returnAddr - 7), 7);
-	outputFile << previousBytes << endl;
+	
+	// Convert to hex string.
+	stringstream stream;
+	stream << hex << previousBytes;
+	string byteString(stream.str());
+	byteString.insert(byteString.begin(), 14 - byteString.length(), '0');
+	byteString = reverseByteOrder(byteString);
+	
+	
 }
 
 VOID doDirectCALL(ADDRINT addr) {
