@@ -17,71 +17,20 @@
 
 using namespace std;
 
+// Get the input file name from the command line.
+KNOB<string> inFileKnob(KNOB_MODE_WRITEONCE, "pintool", "i",
+	"call.txt", "Input file name -- this file must contain the list of"
+	"addresses in memory that contain CALL instructions");
+
 // Get the output file name from the command line.
 KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
 	"vcalls_out.log", "Output file name");
-
-// Get the number of entries on each LBR.
-KNOB<unsigned int> lbrSizeKnob(KNOB_MODE_WRITEONCE, "pintool", "s",
-	"32", "Number of entries on each LBR");
-
-/**
- * LBR (Last Branch Record) data structure.
- */
-
-/**
- * A LBR entry is composed by the address of the branch instruction and
- * a boolean that indicates whether this is a direct branch (true) or
- * indirect (false).
- */
-typedef pair<ADDRINT, bool> LBREntry;
-
-class LBR {
-private:
-	LBREntry *buffer;
-	unsigned int head, tail, size;
-public:
-	LBR(unsigned int size) {
-		this->size = size;
-		head = tail = 0;
-		buffer = (LBREntry*) malloc(sizeof(LBREntry) * (size + 1));
-	}
-	
-	bool empty() {
-		return (head == tail);
-	}
-	
-	void put(LBREntry item) {
-		buffer[head] = item;
-		head = (unsigned int) (head + 1) % size;
-		
-		if (head == tail)
-			tail = (unsigned int) (tail + 1) % size;
-	}
-	
-	void pop() {
-		if (empty())
-			return; 
-		
-		head = (unsigned int) (head - 1) % size;
-	}
-	
-	LBREntry getLastEntry() {
-		if (empty())
-			return make_pair(0, false);
-		
-		unsigned int index = (unsigned int) (head - 1) % size;
-		
-		return buffer[index];
-	}
-};
 
 /**
  * Global Variables.
  */
 
-static ofstream outputFile; // Output file
-LBR callLBR(lbrSizeKnob.Value()); // CALL LBR
+const string done("\t- Done.");
  
 enum callOpcode {
 	opE8, op9A, opFF
@@ -89,11 +38,18 @@ enum callOpcode {
 
 unsigned long instCount = 0; // Total number of instructions
 unsigned long retCount = 0; // Number of RETs found
-unsigned long retsPrecededByValidICALL = 0;
-unsigned long retsPrecededByValidDCALL = 0;
-unsigned long retsPrecededByInvalidICALL = 0;
-unsigned long retsPrecededByInvalidDCALL = 0;
-unsigned long retsNotPrecededByCALLs = 0;
+unsigned long retPrecededByValidICALL = 0;
+unsigned long retPrecededByValidDCALL = 0;
+unsigned long retPrecededByInvalidICALL = 0;
+unsigned long retPrecededByInvalidDCALL = 0;
+unsigned long retNotPrecededByCALLs = 0;
+
+static ofstream outputFile; // Output file
+map<ADDRINT,string> directCalls; // (Address->Direct Call hex dump) map
+map<ADDRINT,string> indirectCalls; // (Address->Indirect Call hex dump) map
+map<ADDRINT,int> validCounts; // Number of times each CALL was valid
+bool directCallsChecked = false; // Direct calls validity already checked
+
 
 long int hexToInt(string in) {
 	/**
@@ -127,6 +83,53 @@ bool isDirectCall(string dump) {
 	 */
 	
 	return (dump[0] != 'F');
+}
+
+INT32 readInputData(string callListFileName) {
+	/**
+	 * Initialize the necessary data for the Pintool.
+	 *
+	 * @callListFileName: Input file name.
+	 * @return: A set that contains the memory locations of the CALL
+	 * instructions in the input file and their hexadecimal dump.
+	 */
+	 
+	cerr << "[+] Reading input file." << endl;
+	unsigned int numberCalls;
+	 
+    ifstream callListFile;
+	callListFile.open(callListFileName.c_str());
+	
+	if (!callListFile) {
+		cerr << "[Error] Couldn't open call list file." << endl;
+		return 1;
+	}
+
+    string line;
+    while (getline(callListFile, line)) {
+		istringstream iss(line);
+		string addrStr, dump;
+		ADDRINT addr;
+		
+		getline(iss, addrStr, ' ');
+		getline(iss, dump, ' ');
+		
+		int length = addrStr.length();
+		addrStr.erase(length-1, 1);
+		addr = hexToInt(addrStr);
+		
+		if (!isDirectCall(dump))
+			indirectCalls[addr] = dump;
+		else
+			directCalls[addr] = dump;
+	
+		validCounts[addr] = 0;
+	}
+	
+	numberCalls = indirectCalls.size() + directCalls.size();
+    callListFile.close();
+	cerr << done << endl;
+	return (numberCalls == 0 ? 1 : 0);
 }
 
 string reverseByteOrder(string const& bytes) {
@@ -403,67 +406,110 @@ bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 	 * @addr: The instruction's address.
 	 * @dump: The instruction's hexadecimal dump.
 	 */
-
-	LBREntry lastEntry = callLBR.getLastEntry();
 	
-	if (lastEntry.second) { // Direct CALLs
+	if (isDirectCall(dump)) { // Direct CALLs
 		ADDRINT target = getCallTarget(ctxt, addr, dump);
 		return isAddrExecutable(target);
 	} else { // Indirect CALLs
-		ADDRINT lastCall = lastEntry.first;
+		ADDRINT lastCall = callLBR.getLastCall();
 		return (lastCall == addr);
 	}
 }
 
-int isPrecededByCall(ADDRINT address) {
+VOID checkValidCalls(const CONTEXT *ctxt) {
 	/**
-	 * Checks if a particular address is preceded by a CALL instruction.
+	 * Check which of the CALL instructions in the input data are valid for the
+	 * curret RET instruction.
 	 *
-	 * @address: Instruction address.
-	 * @return: An integer that indicates if the instruction is preceded by a 
-	 * CALL instruction.
-	 * 		0 if the instruction is not preceded by a CALL.
-	 *		1 if the instruction is preceded by a 
+	 * @ctxt: Pointer to Pin's current CONTEXT object.
 	 */
-
-	return 0;
+	
+	// Check direct calls
+	if (!directCallsChecked) {
+		for (auto it = directCalls.begin(); it != directCalls.end(); it++) {
+			ADDRINT address = it->first;
+			string dump = it->second;
+			
+			if (isCallValid(ctxt, address, dump))
+				validCounts[address]++;
+		}
+		
+		directCallsChecked = true;
+	}
+	
+	// Check indirect calls
+	for (auto it = indirectCalls.begin(); it != indirectCalls.end(); it++) {
+		ADDRINT address = it->first;
+		string dump = it->second;
+		
+		if (isCallValid(ctxt, address, dump))
+			validCounts[address]++;
+	}
 }
 
-VOID doRET(ADDRINT returnAddr) {
+VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 	/**
 	 * Pintool analysis function for return instructions.
 	 *
+	 * @ctxt: Pointer to Pin's current CONTEXT object
 	 * @returnAddr: Return address.
 	 */
-
-	outputFile << hex;
-	// Get previous 7 bytes (largest CALL size) to return address.
-	UINT64 previousBytes = 0;
-	PIN_SafeCopy(&previousBytes, (ADDRINT*)(returnAddr - 7), 7);
-	outputFile << previousBytes << endl;
+	 
+	ADDRINT lastCall;
+	retCount++;
+	
+	//checkValidCalls(ctxt);
+	
+	/**
+	 * Experiment 1 - LBR Matches.
+	 *
+	 * Candidate CALL can be from 2 to 7 bytes before the return address.
+	 */
+	
+	lastCall = callLBR.getLastCall();
+	for (int i = 2; i <= 7; i++) {
+		ADDRINT candidate = returnAddr - i;
+		
+		if (candidate == lastCall) {
+			callLBRMatches++;
+			break;
+		}
+	}
+	
+	lastCall = indirectCallLBR.getLastCall();
+	for (int i = 2; i <= 7; i++) {
+		ADDRINT candidate = returnAddr - i;
+		
+		if (candidate == lastCall) {
+			indirectCallLBRMatches++;
+			break;
+		}
+	}
+	
+	callLBR.pop();
 }
 
 VOID doDirectCALL(ADDRINT addr) {
 	/**
 	 * Pintool analysis fuction for direct call instructions.
+	 *
+	 * @addr: The instruction's address.
 	 */
+	
+	directCallCount++;
+	callLBR.put(addr);
 }
 
 VOID doIndirectCALL(ADDRINT addr) {
 	/**
 	 * Pintool analysis fuction for indirect call instructions.
-	 */
-}
-
-VOID PIN_FAST_ANALYSIS_CALL doCount(UINT32 numIns) {
-	/**
-	 * Pintool analysis function for counting the number of instructions in
-	 * each basic block.
 	 *
-	 * @numIns: Number of instructions in the current basic block.
+	 * @addr: The instruction's address.
 	 */
-	 
-	instCount += numIns;
+	
+	indirectCallCount++;
+	callLBR.put(addr);
+	indirectCallLBR.put(addr);
 }
 
 VOID InstrumentCode(TRACE trace, VOID *v) {
@@ -476,46 +522,21 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
      */
 	 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
-		BBL_InsertCall(bbl, IPOINT_ANYWHERE, (AFUNPTR) doCount, \
-			IARG_FAST_ANALYSIS_CALL, IARG_UINT32, BBL_NumIns(bbl), IARG_END);	
-		
         INS tail = BBL_InsTail(bbl);
 		
 		if (INS_IsRet(tail)) {
 			INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doRET, \
-				IARG_BRANCH_TARGET_ADDR, IARG_END);
+				IARG_CONTEXT, IARG_BRANCH_TARGET_ADDR, IARG_END);
 		} else if (INS_IsCall(tail)) {
-			
+			if (INS_IsDirectCall(tail))
+				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doDirectCALL, \
+					IARG_INST_PTR, IARG_END);
+			else
+				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doIndirectCALL, \
+					IARG_INST_PTR, IARG_END);
 		}
 			
     }
-}
-
-void printExperimentReport() {
-	/**
-	 * Print the report for the Valid Calls experiment.
-	 */
-	
-	outputFile << dec;
-	
-	outputFile << "Reports for experiment \"Valid Calls\" with " << \
-		lbrSizeKnob.Value() << " entries LBR" << endl << endl;
-	outputFile << "[+] Number of instructions executed:" << endl << \
-		"\t" << instCount << endl << endl;
-	outputFile << "[+] Number of RET instructions:" << endl << \
-		"\t" << retCount << endl << endl;
-
-	outputFile << "[+] Number of RETs preceded by valid direct CALLs:" << \
-		endl << "\t" << retsPrecededByValidDCALL << endl << endl;
-	outputFile << "[+] Number of RETs preceded by valid indirect CALLs:" << \
-		endl << "\t" << retsPrecededByValidICALL << endl << endl;
-	outputFile << "[+] Number of RETs preceded by invalid direct CALLs:" << \
-		endl << "\t" << retsPrecededByInvalidDCALL << endl << endl;
-	outputFile << "[+] Number of RETs preceded by invalid indirect CALLs:" << \
-		endl << "\t" << retsPrecededByInvalidICALL << endl << endl;
-	outputFile << "[+] Number of RETs not preceded by CALLs:" << \
-		endl << "\t" << retsNotPrecededByCALLs << endl << endl;
-
 }
 
 VOID Fini(INT32 code, VOID *v) {
@@ -524,8 +545,19 @@ VOID Fini(INT32 code, VOID *v) {
 	 * to end execution.
 	 */
 	 
-	printExperimentReport();
-    outputFile.close();
+	// Reports for valid calls.
+
+	outputFile << "DIRECT CALLs:" << endl;
+	for (auto it = directCalls.begin(); it != directCalls.end(); it++)
+		outputFile << hex << it->first << ": " << dec << \
+			validCounts[it->first] << endl;
+	
+	outputFile << endl;
+	
+	outputFile << "INDIRECT CALLs:" << endl;
+	for (auto it = indirectCalls.begin(); it != indirectCalls.end(); it++)
+		outputFile << hex << it->first << ": " << dec << \
+			validCounts[it->first] << endl;
 }
 
 int main(int argc, char *argv[])
@@ -539,8 +571,15 @@ int main(int argc, char *argv[])
 	// Open the output file.
     outputFile.open(outFileKnob.Value().c_str());
 
+    // Get CALL addresses.
+    if (readInputData(inFileKnob.Value().c_str())) {
+		cerr << "[Error] No CALL was found in the input file." << endl;
+		return 0;
+	}
+
     TRACE_AddInstrumentFunction(InstrumentCode, 0);
     PIN_AddFiniFunction(Fini, 0);
+	cerr << "[+] Running application." << endl;
     PIN_StartProgram();
 
     return 0;
