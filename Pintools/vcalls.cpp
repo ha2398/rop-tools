@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
+#include <list>
 #include <map>
 #include <string>
 #include <sstream>
@@ -79,12 +80,32 @@ public:
 /**
  * Global Variables.
  */
-
+ 
 static ofstream outputFile; // Output file
 LBR callLBR(lbrSizeKnob.Value()); // CALL LBR
  
 enum callOpcode {
-	opE8, op9A, opFF
+	opE8 = 0, op9A, opFF
+};
+
+string callOpcodeStrings[3] = {
+	string("e8"),
+	string("9a"),
+	string("ff")
+};
+
+// Rows -> Size in bytes.
+// Columns -> 1 if correspondent opcode can lead to a CALL of that size.
+// E8 | 9A | FF
+int sizeToOpcodes[8][3] = {
+	{0, 0, 0},
+	{0, 0, 0},
+	{0, 0, 1},
+	{1, 0, 1},
+	{0, 0, 1},
+	{1, 1, 1},
+	{0, 0, 1},
+	{0, 1, 1},
 };
 
 unsigned long instCount = 0; // Total number of instructions
@@ -162,6 +183,22 @@ callOpcode getOpcodeCode(string const& opcode) {
 		return op9A;
 	else
 		return opFF;
+}
+
+string getOpcodeString(callOpcode code) {
+	/**
+	 * Get the CALL instruction opcode string.
+	 * 
+	 * @opcode: Code that represents the opcode of the CALL instruction.
+	 * @return: CALL opcode string.
+	 */
+	 
+	if (code == opE8)
+		return "e8";
+	if (code == op9A)
+		return "9a";
+	else
+		return "ff";
 }
 
 BOOL isAddrExecutable(ADDRINT address) {
@@ -415,28 +452,16 @@ bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 	}
 }
 
-int isPrecededByCall(ADDRINT address) {
-	/**
-	 * Checks if a particular address is preceded by a CALL instruction.
-	 *
-	 * @address: Instruction address.
-	 * @return: An integer that indicates if the instruction is preceded by a 
-	 * CALL instruction.
-	 * 		0 if the instruction is not preceded by a CALL.
-	 *		1 if the instruction is preceded by a 
-	 */
-
-	return 0;
-}
-
 VOID doRET(ADDRINT returnAddr) {
 	/**
 	 * Pintool analysis function for return instructions.
 	 *
 	 * @returnAddr: Return address.
 	 */
-
-	outputFile << hex;
+	
+	bool precededByCall = false;
+	string foundCallOpcode;
+	int callSize = 0;
 	
 	// Get previous 7 bytes (largest CALL size) to return address.
 	UINT64 previousBytes = 0;
@@ -449,7 +474,27 @@ VOID doRET(ADDRINT returnAddr) {
 	byteString.insert(byteString.begin(), 14 - byteString.length(), '0');
 	byteString = reverseByteOrder(byteString);
 	
+	// Check if there is a CALL instruction immediately before this RET
+	// instruction.
+	for (int size = 2; size <= 7; size++) {
+		for (int opcode = opE8; opcode <= opFF; opcode++) {
+			if (sizeToOpcodes[size][opcode] == 1) {
+				string opcodeStr = getOpcodeString((callOpcode)opcode);
 	
+				if (byteString.substr(14 - 2*size, 2).compare(opcodeStr)) {
+					precededByCall = true;
+					foundCallOpcode = string(opcodeStr);
+					break;
+				}
+			}
+		}
+		
+		if (precededByCall)
+			break;
+	}
+	
+	outputFile << dec;
+	outputFile << byteString << ": precededByCall: " << precededByCall << endl;
 }
 
 VOID doDirectCALL(ADDRINT addr) {
