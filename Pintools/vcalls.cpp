@@ -103,7 +103,7 @@ int sizeToOpcodes[8][3] = {
 	{0, 0, 1},
 	{1, 0, 1},
 	{0, 0, 1},
-	{1, 1, 1},
+	{1, 1, 0},
 	{0, 0, 1},
 	{0, 1, 1},
 };
@@ -278,6 +278,8 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 		case 16:
 			target = ((IP + disp) & 0x0000FFFF);
 			break;
+		default:
+			target = -1;
 		}
 		
 		break;
@@ -421,7 +423,7 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 		
 		break;
 	default:
-		target = 0;
+		target = -1;
 	}
 	
 	return target;
@@ -452,6 +454,48 @@ bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 	}
 }
 
+bool checkFFCallSize(string modRM, unsigned int size) {
+	/**
+	 * Checks if a particular FF opcode CALL instruction has a valid
+	 * size according to its modRM byte.
+	 *
+	 * @modRM: string that represents the modRM hex byte.
+	 * @size: Candidate size.
+	 *
+	 * @return: True iff the candidate size matches the modRM byte.
+	 */
+	
+	char first = modRM[0], second = modRM[1];
+	
+	switch(first) {
+	case '1':
+		if (second == '4' || second == 'c')
+			return size == 3;
+		else if (second == '5' || second == 'd')
+			return size == 6;
+		else
+			return size == 2;
+		break;
+	case 'd':
+		return size == 2;
+		break;
+	case '5':
+		if (second == '4' || second == 'c')
+			return size == 4;
+		else
+			return size == 3;
+		break;
+	case '9':
+		if (second == '4' || second == 'c')
+			return size == 7;
+		else
+			return size == 6;
+		break;
+	}
+	
+	return false;
+}
+
 VOID doRET(ADDRINT returnAddr) {
 	/**
 	 * Pintool analysis function for return instructions.
@@ -462,6 +506,7 @@ VOID doRET(ADDRINT returnAddr) {
 	bool precededByCall = false;
 	string foundCallOpcode;
 	int callSize = 0;
+	int index = 0;
 	
 	// Get previous 7 bytes (largest CALL size) to return address.
 	UINT64 previousBytes = 0;
@@ -480,11 +525,18 @@ VOID doRET(ADDRINT returnAddr) {
 		for (int opcode = opE8; opcode <= opFF; opcode++) {
 			if (sizeToOpcodes[size][opcode] == 1) {
 				string opcodeStr = getOpcodeString((callOpcode)opcode);
+				index = 14 - 2*size;
 	
-				if (byteString.substr(14 - 2*size, 2).compare(opcodeStr)) {
-					precededByCall = true;
+				if (byteString.substr(index, 2) == opcodeStr) {
 					foundCallOpcode = string(opcodeStr);
-					break;
+					
+					if (foundCallOpcode == "ff") {
+						precededByCall = \
+							checkFFCallSize(byteString.substr(index+2), size); 
+					} else {
+						precededByCall = true;
+						break;
+					}
 				}
 			}
 		}
@@ -492,9 +544,6 @@ VOID doRET(ADDRINT returnAddr) {
 		if (precededByCall)
 			break;
 	}
-	
-	outputFile << dec;
-	outputFile << byteString << ": precededByCall: " << precededByCall << endl;
 }
 
 VOID doDirectCALL(ADDRINT addr) {
