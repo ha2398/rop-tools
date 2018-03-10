@@ -147,7 +147,7 @@ bool isDirectCall(string dump) {
 	 * @return: True, iff, the instruction is a direct CALL. False otherwise.
 	 */
 	
-	return (dump[0] != 'F');
+	return (dump[0] != 'F' && dump[0] != 'f');
 }
 
 string reverseByteOrder(string const& bytes) {
@@ -176,10 +176,10 @@ callOpcode getOpcodeCode(string const& opcode) {
 	 * @opcode: String that represents the opcode of the CALL instruction.
 	 * @return: CALL opcode code.
 	 */
-	 
-	if (opcode == "E8")
+	
+	if (opcode == "e8" || opcode == "E8")
 		return opE8;
-	if (opcode == "9A")
+	if (opcode == "9a" || opcode == "9A")
 		return op9A;
 	else
 		return opFF;
@@ -443,12 +443,16 @@ bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 	 * @dump: The instruction's hexadecimal dump.
 	 */
 
-	LBREntry lastEntry = callLBR.getLastEntry();
-	
-	if (lastEntry.second) { // Direct CALLs
+	if (isDirectCall(dump)) { // Direct CALLs
 		ADDRINT target = getCallTarget(ctxt, addr, dump);
+		
+		outputFile << hex;
+		outputFile << "Target: " << target << endl;
+		
+		
 		return isAddrExecutable(target);
-	} else { // Indirect CALLs
+	} else { //Indirect CALLs
+		LBREntry lastEntry = callLBR.getLastEntry();
 		ADDRINT lastCall = lastEntry.first;
 		return (lastCall == addr);
 	}
@@ -496,7 +500,7 @@ bool checkFFCallSize(string modRM, unsigned int size) {
 	return false;
 }
 
-VOID doRET(ADDRINT returnAddr) {
+VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 	/**
 	 * Pintool analysis function for return instructions.
 	 *
@@ -507,6 +511,11 @@ VOID doRET(ADDRINT returnAddr) {
 	string foundCallOpcode;
 	int callSize = 0;
 	int index = 0;
+	ADDRINT callAddr = 0;
+	string callDump;
+	bool callIsDirect = false;
+	
+	retCount++;
 	
 	// Get previous 7 bytes (largest CALL size) to return address.
 	UINT64 previousBytes = 0;
@@ -526,6 +535,7 @@ VOID doRET(ADDRINT returnAddr) {
 			if (sizeToOpcodes[size][opcode] == 1) {
 				string opcodeStr = getOpcodeString((callOpcode)opcode);
 				index = 14 - 2*size;
+				callSize = size;
 	
 				if (byteString.substr(index, 2) == opcodeStr) {
 					foundCallOpcode = string(opcodeStr);
@@ -541,21 +551,58 @@ VOID doRET(ADDRINT returnAddr) {
 			}
 		}
 		
-		if (precededByCall)
+		if (precededByCall) {
+			callDump = string(byteString.substr(index));
 			break;
+		}
+	}
+	
+	// Increment proper counters.
+	if (!precededByCall) {
+		retsNotPrecededByCALLs++;
+	} else {
+		callAddr = returnAddr - callSize;
+		callIsDirect = isDirectCall(callDump);
+		
+		outputFile << hex;
+		outputFile << "Return address: " << returnAddr << endl;
+		outputFile << "Call address: " << callAddr << endl;
+		outputFile << dec;
+		outputFile << "Call dump: " << callDump << endl;
+		outputFile << "call is direct: " << callIsDirect << endl << endl;
+		
+		if (isCallValid(ctxt, callAddr, callDump)) {
+			if (callIsDirect)
+				retsPrecededByValidDCALL++;
+			else
+				retsPrecededByValidICALL++;
+		} else {
+			if (callIsDirect)
+				retsPrecededByInvalidDCALL++;
+			else
+				retsPrecededByInvalidICALL++;
+		}
 	}
 }
 
 VOID doDirectCALL(ADDRINT addr) {
 	/**
 	 * Pintool analysis fuction for direct call instructions.
+	 *
+	 * @addr: The instruction's address.
 	 */
+	
+	callLBR.put(make_pair(addr, true));
 }
 
 VOID doIndirectCALL(ADDRINT addr) {
 	/**
 	 * Pintool analysis fuction for indirect call instructions.
+	 *
+	 * @addr: The instruction's address.
 	 */
+	
+	callLBR.put(make_pair(addr, false));
 }
 
 VOID PIN_FAST_ANALYSIS_CALL doCount(UINT32 numIns) {
@@ -586,11 +633,15 @@ VOID InstrumentCode(TRACE trace, VOID *v) {
 		
 		if (INS_IsRet(tail)) {
 			INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doRET, \
-				IARG_BRANCH_TARGET_ADDR, IARG_END);
+				IARG_CONTEXT, IARG_BRANCH_TARGET_ADDR, IARG_END);
 		} else if (INS_IsCall(tail)) {
-			
+			if (INS_IsDirectCall(tail))
+				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doDirectCALL, \
+					IARG_INST_PTR, IARG_END);
+			else
+				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doIndirectCALL, \
+					IARG_INST_PTR, IARG_END);
 		}
-			
     }
 }
 

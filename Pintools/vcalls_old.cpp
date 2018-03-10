@@ -1,3 +1,4 @@
+
 /**
  * @author: Hugo Sousa (hugosousa@dcc.ufmg.br)
  *
@@ -12,56 +13,113 @@
 #include <iostream>
 #include <fstream>
 #include <map>
+#include <set>
 #include <string>
 #include <sstream>
 
 using namespace std;
 
-// Get the input file name from the command line.
-KNOB<string> inFileKnob(KNOB_MODE_WRITEONCE, "pintool", "i",
-	"call.txt", "Input file name -- this file must contain the list of"
-	"addresses in memory that contain CALL instructions");
-
-// Get the output file name from the command line.
+// Get the output file name from the command line (-o flag).
 KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
-	"vcalls_out.log", "Output file name");
+	"pintool.out", "Output file name");
 
-/**
- * Global Variables.
- */
-
-const string done("\t- Done.");
- 
 enum callOpcode {
 	opE8, op9A, opFF
 };
 
-unsigned long instCount = 0; // Total number of instructions
-unsigned long retCount = 0; // Number of RETs found
-unsigned long retPrecededByValidICALL = 0;
-unsigned long retPrecededByValidDCALL = 0;
-unsigned long retPrecededByInvalidICALL = 0;
-unsigned long retPrecededByInvalidDCALL = 0;
-unsigned long retNotPrecededByCALLs = 0;
+/**
+ * Global Variables.
+ */
+static ofstream outputFile;
+map<string, string> calls;
+unsigned long totalFound = 0;
+unsigned long totalCorrect = 0;
+unsigned long totalErrors = 0;
 
-static ofstream outputFile; // Output file
-map<ADDRINT,string> directCalls; // (Address->Direct Call hex dump) map
-map<ADDRINT,string> indirectCalls; // (Address->Indirect Call hex dump) map
-map<ADDRINT,int> validCounts; // Number of times each CALL was valid
-bool directCallsChecked = false; // Direct calls validity already checked
+set<string> correct;
+set<string> incorrect;
 
+/**
+ * Print the correct usage of the pintool.
+ */
+INT32 PrintUsage() {
+    cerr << "\nUsage: pin -t <Pintool> [-o <OutputFileName> [-i"
+        " <InputFileName>] -- <Application>\n\n"
+        "Options:\n"
+        "\t-o\t<OutputFileName>\t"
+        "Indicates the name of the output file (default: pintool.out)\n"
+        "\t-i\t<InputFileName>\t"
+        "Indicates the name of the input file name. This file must contain the"
+        " memory locations of the CALL instructions in the application"
+        " (default: call.txt)\n\n";
 
+    return -1;
+}
+
+/**
+ * Initialize the necessary data for the Pintool.
+ *
+ * @callListFileName: Input file name.
+ * @return: A set that contains the memory locations of the CALL instructions
+ * in the input file and their hexadecimal dump.
+ */
+VOID readInputData(string callListFileName) {
+    ifstream callListFile;
+	callListFile.open(callListFileName.c_str());
+	
+	if (!callListFile) {
+		cerr << "[Error] Couldn't open call list file." << endl;
+		return;
+	}
+
+    string line;
+    while (getline(callListFile, line)) {
+		istringstream iss(line);
+		string addr, dump;
+		
+		getline(iss, addr, ' ');
+		getline(iss, dump, ' ');
+		
+		int length = addr.length();
+		addr.erase(length-1, 1);
+		
+		calls[addr] = dump;
+	}
+		
+    callListFile.close();
+	return;
+}
+
+/**
+ * Reverse the byte order of a string that represents an hexadecimal byte flow.
+ */
+string reverseByteOrder(string const& bytes) {
+	string result;
+	result.reserve(bytes.size());
+	
+	for (size_t i = bytes.size(); i != 0; i -= 2)
+		result.append(bytes, i-2, 2);
+	
+	return result;
+}
+
+/**
+ * Get the CALL instruction opcode code.
+ */
+callOpcode getOpcodeCode(string const& opcode) {
+	if (opcode == "E8")
+		return opE8;
+	if (opcode == "9A")
+		return op9A;
+	else
+		return opFF;
+}
+
+/**
+ * Convert a hex string to a two's complement number (signed integer).
+ * @hex: String that represents the number in two's complement.
+ */
 long int hexToInt(string in) {
-	/**
-	 * Convert a string that represents a sequence of bytes in hexadecimal
-	 * notation to a two's complement number (signed integer) equivalent to the
-	 * hex bytes.
-	 * 
-	 * @in: String that represents a sequence of bytes in hexadecimal notation.
-	 * @return: Two's complement number (signed integer) equivalent to the
-	 * input hex bytes.
-	 */
-	 
 	int bits = in.length() * 4;
 	char *endPtr;
 	long long int result;
@@ -74,133 +132,13 @@ long int hexToInt(string in) {
 	return result;
 }
 
-bool isDirectCall(string dump) {
-	/**
-	 * Check if a given CALL instruction is a direct CALL.
-	 *
-	 * @dump: The instruction's hexadecimal dump.
-	 * @return: True, iff, the instruction is a direct CALL. False otherwise.
-	 */
-	
-	return (dump[0] != 'F');
-}
-
-INT32 readInputData(string callListFileName) {
-	/**
-	 * Initialize the necessary data for the Pintool.
-	 *
-	 * @callListFileName: Input file name.
-	 * @return: A set that contains the memory locations of the CALL
-	 * instructions in the input file and their hexadecimal dump.
-	 */
-	 
-	cerr << "[+] Reading input file." << endl;
-	unsigned int numberCalls;
-	 
-    ifstream callListFile;
-	callListFile.open(callListFileName.c_str());
-	
-	if (!callListFile) {
-		cerr << "[Error] Couldn't open call list file." << endl;
-		return 1;
-	}
-
-    string line;
-    while (getline(callListFile, line)) {
-		istringstream iss(line);
-		string addrStr, dump;
-		ADDRINT addr;
-		
-		getline(iss, addrStr, ' ');
-		getline(iss, dump, ' ');
-		
-		int length = addrStr.length();
-		addrStr.erase(length-1, 1);
-		addr = hexToInt(addrStr);
-		
-		if (!isDirectCall(dump))
-			indirectCalls[addr] = dump;
-		else
-			directCalls[addr] = dump;
-	
-		validCounts[addr] = 0;
-	}
-	
-	numberCalls = indirectCalls.size() + directCalls.size();
-    callListFile.close();
-	cerr << done << endl;
-	return (numberCalls == 0 ? 1 : 0);
-}
-
-string reverseByteOrder(string const& bytes) {
-	/**
-	 * Reverse the byte order of a string that represents an hexadecimal byte
-	 * flow.
-	 * 
-	 * @bytes: String that represents the bytes in hexadecimal notation.
-	 * @return: String that represents the same bytes of the input string but
-	 * in reverse order.
-	 */
-	 
-	string result;
-	result.reserve(bytes.size());
-	
-	for (size_t i = bytes.size(); i != 0; i -= 2)
-		result.append(bytes, i-2, 2);
-	
-	return result;
-}
-
-callOpcode getOpcodeCode(string const& opcode) {	
-	/**
-	 * Get the CALL instruction opcode code.
-	 * 
-	 * @opcode: String that represents the opcode of the CALL instruction.
-	 * @return: CALL opcode code.
-	 */
-	 
-	if (opcode == "E8")
-		return opE8;
-	if (opcode == "9A")
-		return op9A;
-	else
-		return opFF;
-}
-
-BOOL isAddrExecutable(ADDRINT address) {
-	/**
-	 * Check if a particular memory address is in an executable page.
-	 * 
-	 * @address: Address to check.
-	 * @return: True if, and only if, @address is in an executable memory page.
-	 */
-	
-	// Find Image to which address belongs.
-	PIN_LockClient();
-	IMG addrImg = IMG_FindByAddress(address);
-	PIN_UnlockClient();
-	
-	// Find Section to which address belongs.
-	SEC sec = IMG_SecHead(addrImg);
-	SEC nextSec = SEC_Next(sec);
-	while (SEC_Valid(nextSec) && SEC_Address(nextSec) <=  address) {
-		sec = nextSec;
-		nextSec = SEC_Next(sec);
-	}
-	
-	return SEC_IsExecutable(sec);
-}
-
-long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) {
-	/**
-	 * Return the target address of a CALL instruction.
-	 *
-	 * @ctxt: Pointer to CPU context Pin object.
-	 * @addr: The instruction's address.
-	 * @dump: The instruction's hexadecimal dump.
-	 * @return: Target address of input CALL instruction.
-	 */
-	 
+/**
+ * Return the target address of a CALL instruction.
+ * @ctxt: Pointer to CPU context Pin object.
+ * @addr: the instruction's address.
+ * @dump: the instruction's hexadecimal dump.
+ */
+long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) { // TODO
 	string opcode = dump.substr(0, 2); // CALL opcode
 	string operand; // Operand hex string for some CALL types
 	
@@ -249,11 +187,13 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 		break;
 		
 	case op9A: // Call far, absolute
-		operand = reverseByteOrder(dump.substr(6));
-		target = hexToInt(operand);
+		operandSize = (dump.substr(6).length()) * 4; // Operand size in bits
+		segment = hexToInt(operand.substr(0, 4));
+		offset = hexToInt(operand.substr(4));
+		target = (segment * (operandSize)) + offset;		
 		break;
 		
-	case opFF: // Call near, absolute indirect OR Call far, absolute indirect.
+	case opFF: // Call near, absolute indirect OR Call far, absolute indirect. TODO
 		// ModR/M Byte: Mod (2bit) | Reg (3bit) | R/M (3bit)
 		modRM = hexToInt(dump.substr(2, 2));
 		
@@ -277,12 +217,7 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 			regVal = PIN_GetContextReg(ctxt, REG_EBX);
 			break;
 		case 4:
-			if (mod < 3) {
-				/**
-				 * Depends on following SIB (Scale, index, base)
-				 * byte.
-				 */
-				 
+			if (mod < 3) { // Depends on following SIB (Scale, index, base) byte.
 				// SIB byte: Scale (2bit) | Index (3bit) | Base (3bit)
 				sib = hexToInt(dump.substr(4, 2));
 				
@@ -393,193 +328,104 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 	return target;
 }
 
-bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
-	/**
-	 * Check if a particular CALL instruction is valid or not.
-	 * 
-	 * - Indirect Calls are considered valid iff its address is in the last
-	 * written position of the LBR. It means this was the last call executed.
-	 * - Direct Calls are considered valid iff their target address is
-	 * executable.
-	 *
-	 * @ctxt: Pointer to CPU context Pin object.
-	 * @addr: The instruction's address.
-	 * @dump: The instruction's hexadecimal dump.
-	 */
+/**
+ * Analysis function for CALLs.
+ */
+VOID doCall(ADDRINT ip, ADDRINT target, const CONTEXT *ctxt) {
+	stringstream ss;
+	ss << hex << ip;
+	string key("0x" + ss.str());
 	
-	if (isDirectCall(dump)) { // Direct CALLs
-		ADDRINT target = getCallTarget(ctxt, addr, dump);
-		return isAddrExecutable(target);
-	} else { // Indirect CALLs
-		ADDRINT lastCall = callLBR.getLastCall();
-		return (lastCall == addr);
+	auto search = calls.find(key);
+	
+	if (search == calls.end()) {
+		totalErrors++;
+		outputFile << "ERROR: Address: 0x" << hex << ip << endl;
+		return;
 	}
-}
+	
+	totalFound++;
+	
+	string dump = search->second;	
+	long calculatedTarget = getCallTarget(ctxt, ip, dump);
 
-VOID checkValidCalls(const CONTEXT *ctxt) {
-	/**
-	 * Check which of the CALL instructions in the input data are valid for the
-	 * curret RET instruction.
-	 *
-	 * @ctxt: Pointer to Pin's current CONTEXT object.
-	 */
-	
-	// Check direct calls
-	if (!directCallsChecked) {
-		for (auto it = directCalls.begin(); it != directCalls.end(); it++) {
-			ADDRINT address = it->first;
-			string dump = it->second;
-			
-			if (isCallValid(ctxt, address, dump))
-				validCounts[address]++;
-		}
+	if (calculatedTarget != target) {
+		outputFile << "WRONG! Instruction: " << hex << dump;
+		outputFile << ". Address: 0x" << hex << ip;
+		outputFile << ". Expecting: " << dec << target;
+		outputFile << ", got: " << dec << calculatedTarget << endl;
 		
-		directCallsChecked = true;
-	}
-	
-	// Check indirect calls
-	for (auto it = indirectCalls.begin(); it != indirectCalls.end(); it++) {
-		ADDRINT address = it->first;
-		string dump = it->second;
+		string opcode = (!dump.substr(0, 2).compare("FF")) ? dump.substr(0, 4) : dump.substr(0, 2);
 		
-		if (isCallValid(ctxt, address, dump))
-			validCounts[address]++;
-	}
-}
-
-VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
-	/**
-	 * Pintool analysis function for return instructions.
-	 *
-	 * @ctxt: Pointer to Pin's current CONTEXT object
-	 * @returnAddr: Return address.
-	 */
-	 
-	ADDRINT lastCall;
-	retCount++;
-	
-	//checkValidCalls(ctxt);
-	
-	/**
-	 * Experiment 1 - LBR Matches.
-	 *
-	 * Candidate CALL can be from 2 to 7 bytes before the return address.
-	 */
-	
-	lastCall = callLBR.getLastCall();
-	for (int i = 2; i <= 7; i++) {
-		ADDRINT candidate = returnAddr - i;
+		auto it = incorrect.find(opcode);
+		if (it == incorrect.end())
+			incorrect.insert(opcode);
 		
-		if (candidate == lastCall) {
-			callLBRMatches++;
-			break;
-		}
-	}
-	
-	lastCall = indirectCallLBR.getLastCall();
-	for (int i = 2; i <= 7; i++) {
-		ADDRINT candidate = returnAddr - i;
+	} else {
+		outputFile << "CORRECT! Instruction: " << hex << dump;
+		outputFile << ". Address: 0x" << hex << ip;
+		outputFile << ". Expecting: " << dec << target;
+		outputFile << ", got: " << dec << calculatedTarget << endl;
 		
-		if (candidate == lastCall) {
-			indirectCallLBRMatches++;
-			break;
-		}
+		string opcode = (!dump.substr(0, 2).compare("FF")) ? dump.substr(0, 4) : dump.substr(0, 2);
+		
+		auto it = correct.find(opcode);
+		if (it == correct.end())
+			correct.insert(opcode);
+		
+		totalCorrect++;
 	}
-	
-	callLBR.pop();
-}
-
-VOID doDirectCALL(ADDRINT addr) {
-	/**
-	 * Pintool analysis fuction for direct call instructions.
-	 *
-	 * @addr: The instruction's address.
-	 */
-	
-	directCallCount++;
-	callLBR.put(addr);
-}
-
-VOID doIndirectCALL(ADDRINT addr) {
-	/**
-	 * Pintool analysis fuction for indirect call instructions.
-	 *
-	 * @addr: The instruction's address.
-	 */
-	
-	indirectCallCount++;
-	callLBR.put(addr);
-	indirectCallLBR.put(addr);
 }
 
 VOID InstrumentCode(TRACE trace, VOID *v) {
     /**
-	 * Pintool instrumentation function.
-	 * 
      * Each Basic Block (BBL) has a single entrace point and a single exit one
      * as well. Hence, CALL and RET instructions will only be found at the end
      * of these BBLs.
      */
-	 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
         INS tail = BBL_InsTail(bbl);
-		
-		if (INS_IsRet(tail)) {
-			INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doRET, \
-				IARG_CONTEXT, IARG_BRANCH_TARGET_ADDR, IARG_END);
-		} else if (INS_IsCall(tail)) {
-			if (INS_IsDirectCall(tail))
-				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doDirectCALL, \
-					IARG_INST_PTR, IARG_END);
-			else
-				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR) doIndirectCALL, \
-					IARG_INST_PTR, IARG_END);
-		}
-			
+
+        if (INS_IsCall(tail)) { // Instrument CALLs
+			if (INS_IsDirectBranchOrCall(tail)) { // Direct CALLs
+				ADDRINT target = INS_DirectBranchOrCallTargetAddress(tail);
+				
+				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR)doCall, \
+					IARG_INST_PTR, IARG_ADDRINT, target, IARG_CONTEXT, IARG_END);
+			} else { // Indirect CALLs
+				INS_InsertCall(tail, IPOINT_BEFORE, (AFUNPTR)doCall, \
+					IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR, IARG_CONTEXT, IARG_END);
+			}
+        }
     }
 }
 
+/**
+ * Perform necessary operations when the instrumented application is about to
+ * end execution.
+ */
 VOID Fini(INT32 code, VOID *v) {
-	/**
-	 * Perform necessary operations when the instrumented application is about
-	 * to end execution.
-	 */
-	 
-	// Reports for valid calls.
-
-	outputFile << "DIRECT CALLs:" << endl;
-	for (auto it = directCalls.begin(); it != directCalls.end(); it++)
-		outputFile << hex << it->first << ": " << dec << \
-			validCounts[it->first] << endl;
 	
-	outputFile << endl;
-	
-	outputFile << "INDIRECT CALLs:" << endl;
-	for (auto it = indirectCalls.begin(); it != indirectCalls.end(); it++)
-		outputFile << hex << it->first << ": " << dec << \
-			validCounts[it->first] << endl;
+    outputFile.close();
 }
 
 int main(int argc, char *argv[])
 {
+    
+
+    
+		
+	// Open the output file.
+    outputFile.open(outFileKnob.Value().c_str(), \
+        std::ofstream::out | std::ofstream::app);
+	
     // Start Pin and checks parameters.
     if (PIN_Init(argc, argv)) {
-        cerr << "[Error] Could not start Pin." << endl;
-		return -1;
+        return PrintUsage();
     }
-	
-	// Open the output file.
-    outputFile.open(outFileKnob.Value().c_str());
-
-    // Get CALL addresses.
-    if (readInputData(inFileKnob.Value().c_str())) {
-		cerr << "[Error] No CALL was found in the input file." << endl;
-		return 0;
-	}
 
     TRACE_AddInstrumentFunction(InstrumentCode, 0);
     PIN_AddFiniFunction(Fini, 0);
-	cerr << "[+] Running application." << endl;
     PIN_StartProgram();
 
     return 0;
