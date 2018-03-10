@@ -28,7 +28,7 @@ ROP_ARG = 1
 CALL_ARG = 2
 
 # Size, in bytes, of each call instruction, by opcode.
-CALL_SIZES = {'E8': [3, 5], '9A': [5, 7], 'FF': range(2, 7)}
+CALL_SIZES = {'E8': [3, 5], '9A': [5, 7], 'FF': [2, 3, 4, 6, 7]}
 MIN_CALL_SIZE = 2
 MAX_CALL_SIZE = 7
 
