@@ -571,6 +571,8 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 				retsPrecededByInvalidICALL++;
 		}
 	}
+	
+	callLBR.pop();
 }
 
 VOID doDirectCALL(ADDRINT addr) {
