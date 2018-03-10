@@ -445,11 +445,6 @@ bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 
 	if (isDirectCall(dump)) { // Direct CALLs
 		ADDRINT target = getCallTarget(ctxt, addr, dump);
-		
-		outputFile << hex;
-		outputFile << "Target: " << target << endl;
-		
-		
 		return isAddrExecutable(target);
 	} else { //Indirect CALLs
 		LBREntry lastEntry = callLBR.getLastEntry();
@@ -563,13 +558,6 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 	} else {
 		callAddr = returnAddr - callSize;
 		callIsDirect = isDirectCall(callDump);
-		
-		outputFile << hex;
-		outputFile << "Return address: " << returnAddr << endl;
-		outputFile << "Call address: " << callAddr << endl;
-		outputFile << dec;
-		outputFile << "Call dump: " << callDump << endl;
-		outputFile << "call is direct: " << callIsDirect << endl << endl;
 		
 		if (isCallValid(ctxt, callAddr, callDump)) {
 			if (callIsDirect)
