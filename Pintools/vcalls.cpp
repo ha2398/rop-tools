@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
-#include <list>
 #include <string>
 #include <sstream>
 
