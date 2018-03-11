@@ -8,24 +8,28 @@ import sys
 '''
 @author: Hugo Sousa (hugosousa@dcc.ufmg.br)
 
-valid_gadgets.py: This script gets 2 file as inputs:
+valid_gadgets.py: This script gets 3 file as inputs:
 	- rop: Mona generated text file with a list of interesting gadgets for an
 	exploit based on a specific application.
 	- calls: Mona generated text file with the list of all CALL instructions
 	in a particular application.
+	- valid calls: Text file with the list of all valid CALL instructions
+	in a particular application execution.
 
 And prints the number of gadgets on the rop list, the number of CALL
-istructions on the call list, and the number of gadgets that are preceded by
-CALL instructions.
+istructions on the call list, the number of gadgets that are preceded by
+CALL instructions and the number of gadgets that are preceded by valid CALL
+instructions.
 '''
 
 # Constants
-NUM_ARGS = 3
-USAGE_STR = 'Usage: valid_gadgets.py <rop> <calls>'
+NUM_ARGS = 4
+USAGE_STR = 'Usage: valid_gadgets.py <rop> <calls> <valid_calls>'
 
 # Indeces for the script's arguments.
 ROP_ARG = 1
 CALL_ARG = 2
+VCALL_ARG = 3
 
 # Size, in bytes, of each call instruction, by opcode.
 CALL_SIZES = {'E8': [3, 5], '9A': [5, 7], 'FF': [2, 3, 4, 6, 7]}
@@ -50,18 +54,21 @@ def check_args():
 		exit()
 
 
-def open_files(rop_filename, calls_filename):
+def open_files(rop_filename, calls_filename, vcalls_filename):
 	''' Tries to open the input files.
 		@rop_filename: gadgets list file name.
-		@return: rop file.'''
+		@calls_filename: call list file name.
+		@vcalls_filename: valid call list file name.
+		@return: rop file, call file, valid calls file.'''
 	try:
 		gadgets_file = open(rop_filename, 'r')
 		calls_file = open(calls_filename, 'r')
+		vcalls_file = open(vcalls_filename, 'r')
 	except:
 		print('[Error] Couldn\'t open input files.', file=sys.stderr)
 		exit()
 	else:
-		return gadgets_file, calls_file
+		return gadgets_file, calls_file, vcalls_file
 
 
 def trim_rop_list(gadgets_file):
@@ -93,10 +100,13 @@ def get_gadgets(gadgets_file):
 	return gadgets_addr
 
 
-def trim_call_list(calls_file):
+def trim_call_list(calls_file, vcalls_file):
 	''' Place the file pointer at the beginning of the actual call list on the
 		file.
-		@calls_file: File with call list. '''
+		@calls_file: File with call list.
+		@vcalls_file" File with valid calls list. '''
+
+	# CALL list
 	DELIM_SIZE = 137
 	delim = '-' * DELIM_SIZE
 	delim_counter = 0
@@ -109,16 +119,24 @@ def trim_call_list(calls_file):
 		if delim_counter != DELIM_NUM:
 			next_line = calls_file.readline()
 
+	# Valid CALL list.
+	for i in range(10):
+		vcalls_file.readline()
 
-def get_calls(calls_file):
+
+def get_calls(calls_file, vcalls_file):
 	''' Processes call instructions in the gadgets call file.
 		@calls_file: file with the call list.
-		@return: Call instruction dictionary. Keys: addresses, values: dump.'''
+		@vcalls_file: file with the valid call list.
+		@return: Call instruction dictionary. Keys: addresses, values: dump.
+				 Valid call instruction dictionary. Same structure. '''
 
-	trim_call_list(calls_file)
+	trim_call_list(calls_file, vcalls_file)
 
 	calls = {}
+	valid_calls = {}
 
+	# CALLs
 	next_call = calls_file.readline()
 	while (next_call != ''):
 		if ' : ' in next_call:
@@ -131,7 +149,16 @@ def get_calls(calls_file):
 		
 		next_call = calls_file.readline()
 
-	return calls
+	# Valid CALLs
+	next_call = vcalls_file.readline()
+	while (next_call != ''):
+		strings = next_call.split(':')
+		address = '0x' + strings[0]
+		dump = strings[1].strip().upper()
+		valid_calls[address] = dump
+		next_call = vcalls_file.readline()
+
+	return calls, valid_calls
 
 
 def is_preceded_by_call(address, calls):
@@ -152,39 +179,62 @@ def is_preceded_by_call(address, calls):
 
 	return False
 
+def is_preceded_by_valid_call(address, valid_calls):
+	''' Checks if a given gadget is preceded by a call instruction.
+		@address: Hexademical address of the gadget.
+		@valid_calls: Collection with valid call instructions addresses.
+		@return: True if the gadget is preceded by valid call and False otherwise.
+		'''
+	''' Hence, for each gadget, we need to check 6 addresses, the ones
+		obtained by	subtracting x bytes from the gadget address, where x is an 
+		integer in from 2 to 7, inclusive. '''
+	for offset in range(MIN_CALL_SIZE, MIN_CALL_SIZE+1):
+		candidate = hex(int(address, addr_BASE) - offset)
+		if candidate in valid_calls:
+			call_opcode = valid_calls[candidate][:2]
+			if offset in CALL_SIZES[call_opcode]:
+				return True
 
-def filter_call_gadgets(gadgets_addr, calls):
+	return False
+
+
+def filter_gadgets(gadgets_addr, calls, valid_calls):
 	''' Filters gadgets preceded by call instructions. 
 		@gadgets_addr: Collection with gadgets' addresses.
 		@calls: Collection with call instructions' addresses.
+		@valid_calls: Collection with valid call instructions' addresses.
 		@return: A list of gadgets preceded by call instructions. '''
 	call_gadgets = filter(lambda x: is_preceded_by_call(x, calls), \
 		gadgets_addr)
 
-	return call_gadgets
+	valid_call_gadgets = filter(lambda x: is_preceded_by_valid_call(x, \
+		valid_calls), gadgets_addr)
+
+	return call_gadgets, valid_call_gadgets
 
 
 def main():
 	''' Main script. '''
 	check_args()
-	gadgets_file, calls_file = open_files(sys.argv[ROP_ARG], sys.argv[CALL_ARG])
+	gadgets_file, calls_file, vcalls_file = \
+		open_files(sys.argv[ROP_ARG], sys.argv[CALL_ARG], sys.argv[VCALL_ARG])
 
 	gadgets_addr = get_gadgets(gadgets_file)
 
-	calls = get_calls(calls_file)
-	dump_file = open('addr.out', 'w')
-	for addr in calls:
-		dump_file.write(addr + ': ' + calls[addr] + '\n')
-	dump_file.close()
+	calls, valid_calls = get_calls(calls_file, vcalls_file)
 
-	call_gadgets = filter_call_gadgets(gadgets_addr, calls)
+	call_gadgets, valid_call_gadgets = \
+		filter_gadgets(gadgets_addr, calls, valid_calls)
 
 	print('Number of gadgets: ' + str(len(gadgets_addr)))
 	print('Number of calls: ' + str(len(calls)))
 	print('Number of gadgets preceded by calls: ' + str(len(call_gadgets)))
+	print('Number of gadgets preceded by valid calls: ' + \
+		str(len(valid_call_gadgets)))
 
 	gadgets_file.close()
 	calls_file.close()
+	vcalls_file.close()
 
 
 # Main script
