@@ -16,6 +16,10 @@
 #include <string>
 #include <sstream>
 
+#if defined(_MSC_VER)
+#define strtoll _strtoi64
+#endif
+
 using namespace std;
 
 // Get the output file name from the command line.
@@ -551,17 +555,15 @@ VOID doRET(const CONTEXT *ctxt, ADDRINT returnAddr) {
 	}
 	
 	// Increment proper counters.
-	if (!precededByCall) {
-		retsNotPrecededByCALLs++;
-	} else {
+	if (precededByCall) {
 		callAddr = returnAddr - callSize;
 		callIsDirect = isDirectCall(callDump);
 		
 		if (isCallValid(ctxt, callAddr, callDump)) {
 			auto it = validCALLs.find(callAddr);
 
-			if (it != validCALLs.end()) // CALL hasn't been found yet.
-				validCALLs.insert(pair<ADDRINT, string>(callAddr, callDump));
+			if (it == validCALLs.end()) // CALL hasn't been found yet.
+				validCALLs[callAddr] = string(callDump);
 		}
 	}
 	
@@ -635,17 +637,16 @@ void printExperimentReport() {
 	
 	outputFile << dec;
 	
-	outputFile << "Reports for experiment \"Valid Calls\" with " << \
+	outputFile << "Reports for experiment \"Valid Gadgets\" with " << \
 		lbrSizeKnob.Value() << " entries LBR" << endl << endl;
 	outputFile << "[+] Number of instructions executed:" << endl << \
 		"\t" << instCount << endl << endl;
 	outputFile << "[+] Number of RET instructions:" << endl << \
 		"\t" << retCount << endl << endl;
 
-	outputFile << "[+] Valid CALL list:" << endl;
+	outputFile << "[+] Valid CALL list:" << endl << endl;
 
 	for (auto it = validCALLs.begin(); it != validCALLs.end(); it++) {
-		outputFile << "\t";
 		outputFile << hex;
 		outputFile << it->first;
 
