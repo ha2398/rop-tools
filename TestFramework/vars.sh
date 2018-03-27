@@ -25,7 +25,7 @@ fi
 # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- 
 
 # LLVM_PATH  => The place where I have all the LLVM tools
-LLVM_PATH="$HOME/Programs/llvm38/build/bin"
+LLVM_PATH="$HOME/llvm38/build/Debug+Asserts/bin"
 
 # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- 
 
@@ -36,17 +36,15 @@ LLVM_PATH="$HOME/Programs/llvm38/build/bin"
 
 if [[ $PIN -eq 1 ]]; then
   # PIN_PATH   => The place where I keep the pin source code
-  PIN_PATH="$HOME/Programs/Pin"
-  
-  # PIN_LIB    => The place where I keep the Pin lib implemented.
-  PIN_LIB="$HOME/Programs/C/faun/src/PinLib/"
+  PIN_PATH="$HOME/pin-3.4"
+  PIN_LIB="$PIN_PATH/source/tools/SimpleExamples"
   
   # PIN_FLAGS  => Flags to pass to PIN
   PIN_FLAGS="" ;
 
   echo "PIN_PATH is set to $PIN_PATH"
-  echo "PIN_LIB is set to $PIN_LIB"
-  PIN_ROOT=$PIN_PATH make -C $PIN_LIB
+
+  cp ../Pintools/Overhead/complete.cpp ../Pintools/Overhead/pruned.cpp $PIN_PATH/source/tools/SimpleExamples
 fi
 
 # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- 

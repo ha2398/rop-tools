@@ -3,7 +3,7 @@
 function execute() {
 
   cmd="$TIMEOUT --signal=TERM ${RUNTIME} time \
-       $PIN_PATH/pin -t $PIN_LIB/obj-intel64/MyPinTool.${suffix} \
+       $PIN_PATH/pin -t $PIN_LIB/obj-intel64/$PINTOOL.so \
        $PIN_FLAGS \
        -- ./$exe_name $RUN_OPTIONS < $STDIN > $STDOUT" ;
 
