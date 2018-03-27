@@ -238,9 +238,6 @@ long getCallTarget(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 	string opcode = dump.substr(0, 2); // CALL opcode
 	string operand; // Operand hex string for some CALL types
 	
-	long segment; // Segment for ptrX:Y
-	long offset; // Offset for ptrX:Y
-	
 	unsigned short operandSize; // Operand size for some CALL types
 	long IP; // Instruction pointer value
 	
@@ -477,8 +474,8 @@ bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 		/**
 		 * Duplicated code end.
 	 	*/	
-		LBREntry lastEntry = callLBR.getLastEntry();
-		ADDRINT lastCall = lastEntry.first;
+		lastEntry = callLBR.getLastEntry();
+		lastCall = lastEntry.first;
 		return lastCallMatch;;
 	}
 }
