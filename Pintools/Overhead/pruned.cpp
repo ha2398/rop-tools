@@ -24,25 +24,6 @@ KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
 KNOB<unsigned int> lbrSizeKnob(KNOB_MODE_WRITEONCE, "pintool", "s",
 	"32", "Number of entries on each LBR");
 
-#include "pin.H"
-
-#include <cstdio>
-#include <cstdlib>
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <sstream>
-
-using namespace std;
-
-// Get the output file name from the command line.
-KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
-	"vcalls_out.log", "Output file name");
-
-// Get the number of entries on each LBR.
-KNOB<unsigned int> lbrSizeKnob(KNOB_MODE_WRITEONCE, "pintool", "s",
-	"32", "Number of entries on each LBR");
-
 /**
  * LBR (Last Branch Record) data structure.
  */
