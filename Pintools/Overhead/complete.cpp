@@ -716,10 +716,8 @@ void printExperimentReport() {
 	
 	outputFile << dec;
 
-	outputFile << "Instructions:" << endl << \
-		"\t" << instCount << endl << endl;
-	outputFile << "RET instructions:" << endl << \
-		"\t" << retCount << endl << endl;
+	outputFile << "Instructions:" << instCount << endl;
+	outputFile << "RET instructions:" << retCount << endl;
 }
 
 VOID Fini(INT32 code, VOID *v) {
