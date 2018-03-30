@@ -6,6 +6,13 @@ PINTOOLS_PATH=$PIN_PATH/source/tools/SimpleExamples
 
 ROOT_DIR=${PWD}
 
+function init() {
+	rm -rf overhead_outputs
+	mkdir overhead_outputs
+	mkdir overhead_outputs/complete
+	mkdir overhead_outputs/pruned
+}
+
 function compile_pintools() {
 	echo "### Compiling Pintools ###"
 	cp ../Pintools/Overhead/complete.cpp ../Pintools/Overhead/pruned.cpp $PIN_PATH/source/tools/SimpleExamples
@@ -26,5 +33,6 @@ function run_pintools() {
 	echo "### Executing pruned pintool ###"
 }
 
+init
 compile_pintools
 run_pintools

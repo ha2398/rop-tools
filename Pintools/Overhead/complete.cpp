@@ -715,25 +715,11 @@ void printExperimentReport() {
 	 */
 	
 	outputFile << dec;
-	
-	outputFile << "Reports for experiment \"Valid Calls\" with " << \
-		lbrSizeKnob.Value() << " entries LBR" << endl << endl;
-	outputFile << "[+] Number of instructions executed:" << endl << \
+
+	outputFile << "Instructions:" << endl << \
 		"\t" << instCount << endl << endl;
-	outputFile << "[+] Number of RET instructions:" << endl << \
+	outputFile << "RET instructions:" << endl << \
 		"\t" << retCount << endl << endl;
-
-	outputFile << "[+] Number of RETs preceded by valid direct CALLs:" << \
-		endl << "\t" << retsPrecededByValidDCALL << endl << endl;
-	outputFile << "[+] Number of RETs preceded by valid indirect CALLs:" << \
-		endl << "\t" << retsPrecededByValidICALL << endl << endl;
-	outputFile << "[+] Number of RETs preceded by invalid direct CALLs:" << \
-		endl << "\t" << retsPrecededByInvalidDCALL << endl << endl;
-	outputFile << "[+] Number of RETs preceded by invalid indirect CALLs:" << \
-		endl << "\t" << retsPrecededByInvalidICALL << endl << endl;
-	outputFile << "[+] Number of RETs not preceded by CALLs:" << \
-		endl << "\t" << retsNotPrecededByCALLs << endl << endl;
-
 }
 
 VOID Fini(INT32 code, VOID *v) {
