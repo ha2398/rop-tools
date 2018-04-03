@@ -16,11 +16,12 @@ def parse_pintools_outputs(benchs):
 
 	for pintool in pintools:
 		for bench in benchs:
+			print(pintool, bench)
 			logfile = open('overhead_outputs/' + pintool + '/' + bench + \
-				'.exe.log')
+				'.exe.log', 'r')
 
-			insts = int(readline.split()[1])
-			rets = int(readline.split()[1])
+			insts = int(logfile.readline().strip().split(':')[1])
+			rets = int(logfile.readline().strip().split(':')[1])
 
 			outputs[pintool][bench] = (insts, rets)
 			logfile.close()
