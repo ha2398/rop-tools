@@ -18,7 +18,7 @@ def parse_pintools_outputs(benchs):
 		for bench in benchs:
 			print(pintool, bench)
 			logfile = open('overhead_outputs/' + pintool + '/' + bench + \
-				'.exe.log', 'r')
+				'.log', 'r')
 
 			insts = int(logfile.readline().strip().split(':')[1])
 			rets = int(logfile.readline().strip().split(':')[1])
@@ -103,7 +103,7 @@ def main():
 	benchs = [x for x in complete_runtimes]
 	outputs = parse_pintools_outputs(benchs)
 
-	print_results(output, complete_runtimes, pruned_runtimes)
+	print_results(output, complete_runtimes, pruned_runtimes, outputs)
 
 	complete.close()
 	pruned.close()
