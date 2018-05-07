@@ -457,6 +457,8 @@ bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 			 */
 			if (targetIsExecutable)
 				duplicatedBool = true;
+			else
+				duplicatedBool = false;
 			/**
 			 * Duplicated code end.
 			 */	
@@ -476,7 +478,7 @@ bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 	 	*/	
 		lastEntry = callLBR.getLastEntry();
 		lastCall = lastEntry.first;
-		return lastCallMatch;;
+		return lastCallMatch;
 	}
 }
 
