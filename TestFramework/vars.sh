@@ -16,6 +16,9 @@
 # JOBS
 [[ -n $JOBS ]] || JOBS=1 ;
 
+# Perf repeat number
+[[ -n $REPEAT ]] || REPEAT=5 ;
+
 # Set the lib suffix.
 suffix="dylib" ;
 if [[ $(uname -s) == "Linux" ]]; then

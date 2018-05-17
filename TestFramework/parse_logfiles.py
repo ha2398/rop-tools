@@ -47,8 +47,8 @@ def parse_file(file):
 	# Parse log file.
 	while line:
 		line_args = line.split()
-		runtime = float(line_args[3])
-		benchmark = line_args[9].split('/')[-1]
+		runtime = float(line_args[0])
+		benchmark = line_args[7].split('/')[-1]
 
 		runtimes[benchmark] = runtime
 		line = file.readline()
