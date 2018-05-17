@@ -165,9 +165,4 @@ done
 
 cd $BASEDIR ;
 
-source "parallel.sh"
-source "collect.sh"
-
-
-
-
+source "run_perf.sh"
