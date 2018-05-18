@@ -15,7 +15,8 @@ while read -r LINE; do
 	echo $bench_cmd
 
 	$cd_cmd
-	runtime=$(perf stat -r $REPEAT --log-fd 1 $bench_cmd | grep time | awk -F ' ' '{print $1}' \
+	runtime=$(perf stat -r $REPEAT --log-fd 1 $bench_cmd | grep "seconds time elapsed" \
+	       	| awk -F ' ' '{print $1}' \
 		| sed -r 's/,/./g')
 
 	echo -e "$runtime\t$bench_cmd" >> $BASEDIR/run.log
