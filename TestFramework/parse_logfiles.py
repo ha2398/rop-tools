@@ -46,10 +46,12 @@ def parse_file(file):
 	line = file.readline()
 	# Parse log file.
 	while line:
-		line_args = line.split()
-		runtime = float(line_args[0])
-		benchmark = line_args[7].split('/')[-1]
+                # Command
+                benchmark = line.split(':')[1:]
 
+                # Runtime
+                line = file.readline()
+                runtime = float(line.split()[0])
 		runtimes[benchmark] = runtime
 		line = file.readline()
 
