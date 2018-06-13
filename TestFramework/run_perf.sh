@@ -1,18 +1,29 @@
 #!/bin/bash
 
-rm -f $BASEDIR/run.txt.temp $BASEDIR/run.log
+OUT_FILE="$BASEDIR/run.log"
+rm -f $BASEDIR/run.txt.temp $OUT_FILE
 
 while read -r LINE; do
 	IFS="&&" read -ra cmds <<< "$LINE"
 	cd_cmd=${cmds[0]}
 	bench_cmd=${cmds[2]}
 	
-	echo "$cd_cmd && 3> /dev/stdout perf stat -r $REPEAT --log-fd 3 \
-	       	$bench_cmd" >> $BASEDIR/run.txt.temp
+	# Grouping 1
+	EVENTS="instructions,cpu-clock,iTLB-load-misses,r8488"
+	echo "$cd_cmd && perf stat -r $REPEAT -o $OUT_FILE --append \
+	      -e $EVENTS $bench_cmd" >> $BASEDIR/run.txt.temp
+
+	# Grouping 2
+	EVENTS="instructions,r8489,r8888,r8889"
+	echo "$cd_cmd && perf stat -r $REPEAT -o $OUT_FILE --append \
+	      -e $EVENTS $bench_cmd" >> $BASEDIR/run.txt.temp
+
+	# Grouping 3
+	EVENTS="instructions,ra088,ra089"
+	echo "$cd_cmd && perf stat -r $REPEAT -o $OUT_FILE --append \
+	      -e $EVENTS $bench_cmd" >> $BASEDIR/run.txt.temp
 done < run.txt
 
 mv run.txt.temp run.txt
 
 parallel -j $JOBS < run.txt > parallel.out
-cat parallel.out | grep "Performance counter stats\|seconds time elapsed" | sed -r 's/,/./g' > run.log
-rm -f parallel.out

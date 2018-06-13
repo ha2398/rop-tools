@@ -1,5 +1,6 @@
 #!/bin/bash
 
+MEM_LIMIT=2500000
 PIN=1
 PIN_PATH=$HOME/pin-3.4
 PINTOOLS_PATH=$PIN_PATH/source/tools/SimpleExamples
@@ -11,6 +12,9 @@ function init() {
 	mkdir overhead_outputs
 	mkdir overhead_outputs/complete
 	mkdir overhead_outputs/pruned
+	
+	ulimit -m $MEM_LIMIT
+	ulimit -v $MEM_LIMIT
 }
 
 function compile_pintools() {
