@@ -1,114 +1,157 @@
 #!/usr/bin/env python3
 
+bench_events = {}
+complete_events = {}
+pruned_events = {}
+pintool_outputs = {}
+
+dicts = {'benchs': bench_events,
+         'complete': complete_events,
+         'pruned': pruned_events}
 
 def parse_pintools_outputs(benchs):
-	'''
-		Read the outputs produced by the pintools.
+        '''
+                Read the outputs produced by the pintools.
 
-		@benchs: List of benchmarks.
+                @benchs: List of benchmarks.
 
-		@return: One dictionary with format
-			(pintool -> (benchmark -> (instructions, RET instructions))).
-	'''
+                @return: One dictionary with format
+                        (pintool -> (benchmark -> (instructions, RET instructions))).
+        '''
 
-	pintools = ['complete', 'pruned']
-	outputs = {'complete': {}, 'pruned': {}}
+        pintools = ['complete', 'pruned']
+        outputs = {'complete': {}, 'pruned': {}}
 
-	for pintool in pintools:
-		for bench in benchs:
-			print(pintool, bench)
-			logfile = open('overhead_outputs/' + pintool + '/' + bench + \
-				'.log', 'r')
+        for pintool in pintools:
+                for bench in benchs:
+                        logfile = open('overhead_outputs/' + pintool + '/' + bench + \
+                                '.log', 'r')
+                        
+                        line = logfile.readline()
+                        insts = line.strip().split(':')[1]
+                        line = logfile.readline()
+                        rets = line.strip().split(':')[1]
 
-			insts = int(logfile.readline().strip().split(':')[1])
-			rets = int(logfile.readline().strip().split(':')[1])
+                        outputs[pintool][bench] = (insts, rets)
+                        logfile.close()
 
-			outputs[pintool][bench] = (insts, rets)
-			logfile.close()
-
-	return outputs
-
-
-def parse_file(file):
-	'''
-		Parse a logfile, retrieving runtimes for benchmarks.
-
-		@file: File to parse.
-
-		@return: A dictionary benchmark (string) -> runtime (float).
-	'''
-
-	runtimes = {}
-
-	# Ignore headers
-	file.readline()
-
-	line = file.readline()
-	# Parse log file.
-	while line:
-                # Command
-                benchmark = line.split(':')[1:]
-
-                # Runtime
-                line = file.readline()
-                runtime = float(line.split()[0])
-		runtimes[benchmark] = runtime
-		line = file.readline()
-
-	return runtimes
+        return outputs
 
 
-def print_results(file, complete_runtimes, pruned_runtimes, pintools_outputs):
-	'''
-		Dump runtime results to file.
+def parse_logs():
+        '''
+                Parse the logfiles, retrieving event counting for the complete and
+                pruned Pintools and for the benchmarks without Pin.
 
-		@file: File to dump results to.
-		@complete_runtimes: Dictionary with runtimes for Complete pintool.
-		@pruned_runtimes: Dictionary with runtimes for Pruned pintool.
-		@pintools_outputs: Dictionary with format
-			(pintool -> (benchmark -> (instructions, RET instructions))).
-	'''
+                This function changes the global dictionaries:
+                    complete_events
+                    pruned_events
+                    bench_events
+        '''
+        
+        global dicts
 
-	file.write('Benchmark\tName\tComplete Runtime (s)\t' + \
-		'Instructions (Complete)\tRETs (Complete)\t' + \
-		'Pruned Runtime(s)\tInstructions (Pruned)\t' + \
-		'RETs (Pruned)\n')
+        files = ['complete', 'pruned', 'benchs']
 
-	counter = 1
-	for bench, runtime in sorted(complete_runtimes.items()):
-		runtime_complete = runtime
-		runtime_pruned = pruned_runtimes[bench]
+        for f in files:
+            logfile = open(f + '.log', 'r')
+            cur_dict = dicts[f]
 
-		complete_output = pintools_outputs['complete'][bench]
-		complete_insts = complete_output[0]
-		complete_rets = complete_output[1]
+            line = logfile.readline()
+            while line:
+                if 'Performance' in line:
+                    args = line.split()
+                    current_bench = list(filter(lambda x: 'exe' in x, args))[0]
+                    current_bench = current_bench.split('.')[1].strip('/')
 
-		pruned_output = pintools_outputs['pruned'][bench]
-		pruned_insts = pruned_output[0]
-		pruned_rets = pruned_output[1]
+                    if current_bench not in cur_dict:
+                        cur_dict[current_bench] = {}
+                else:
+                    args = line.split()
+                    if len(args) == 6 or len(args) == 7 or len(args) == 2: # event report
+                        value = args[0].replace(',', '')
+                        event = args[1]
 
-		file.write('{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(counter, bench, \
-			runtime_complete, complete_insts, complete_rets, runtime_pruned, \
-			pruned_insts, pruned_rets))
+                        if len(args) == 6:
+                            stdev = args[4]
+                        elif len(args) == 7:
+                            stdev = args[5]
+                        else:
+                            stdev = '0.00%'
 
-		counter += 1
+                        if event == 'instructions':
+                            current_weight = value
+                        else:
+                            cur_dict[current_bench][event] = (current_weight, \
+                                    value + '(+-' + stdev + ')')
 
+                line = logfile.readline()
+    
+            
+
+            logfile.close()
+
+
+def print_results(benchs):
+        '''
+                Dump runtime results to file.
+
+                @benchs: (string list) List with the benchmark names.
+        '''
+
+        output_file = open('output.log', 'w')
+
+        output_file.write('Bench,INSTs (Pin),RETs (Pin),Instructions (perf)')
+        output_file.write(',cpu-clock,r8888,INSTs (Pin),RETs (Pin)')
+        output_file.write(',Instructions (perf),cpu-clock,r8888,INSTs')
+        output_file.write(',iTLB-load-misses,r8488,r8489,INSTs,r8888,r8889')
+        output_file.write(',ra088,INSTs,ra089\n')
+
+        group1 = ['iTLB-load-misses', 'r8488', 'r8489']
+        group2 = ['r8888', 'r8889', 'ra088']
+        group3 = ['ra089']
+
+        groups = [group1, group2, group3]
+
+        for bench in benchs:
+            output_file.write(bench)
+
+            # Pruned pintool
+            values = pintool_outputs['pruned'][bench]
+            output_file.write(',' + values[0] + ',' + values[1])
+            inst = pruned_events[bench]['cpu-clock'][0]
+            cpu_clock = pruned_events[bench]['cpu-clock'][1]
+            r8888 = pruned_events[bench]['r8888'][1]
+            output_file.write(',' + inst + ',' + cpu_clock + ',' + r8888) 
+
+            # Complete pintool
+            values = pintool_outputs['complete'][bench]
+            output_file.write(',' + values[0] + ',' + values[1])
+            inst = complete_events[bench]['cpu-clock'][0]
+            cpu_clock = complete_events[bench]['cpu-clock'][1]
+            r8888 = complete_events[bench]['r8888'][1]
+            output_file.write(',' + inst + ',' + cpu_clock + ',' + r8888)
+
+            # No instrumentation
+            for group in groups:
+                inst = bench_events[bench][group[0]][0]
+                output_file.write(',' + inst)
+
+                for event in group:
+                    value = bench_events[bench][event][1]
+                    output_file.write(',' + value)
+
+            output_file.write('\n')
+
+        output_file.close()
+               
 
 def main():
-	complete = open('complete.log', 'r')
-	pruned = open('pruned.log', 'r')
-	output = open('overhead.log', 'w')
+        global pintool_outputs
+        parse_logs()
+        benchs = [x for x in complete_events]
+        pintool_outputs = parse_pintools_outputs(benchs)
+        print_results(benchs)
 
-	complete_runtimes = parse_file(complete)
-	pruned_runtimes = parse_file(pruned)
-
-	benchs = [x for x in complete_runtimes]
-	outputs = parse_pintools_outputs(benchs)
-
-	print_results(output, complete_runtimes, pruned_runtimes, outputs)
-
-	complete.close()
-	pruned.close()
-	output.close()
 
 main()

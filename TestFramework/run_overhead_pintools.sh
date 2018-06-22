@@ -29,12 +29,7 @@ function compile_pintools() {
 
 function run_pintools() {
 	echo "### Executing complete pintool ###"
-	COMPILE=0 EXEC=1 PIN=1 RUNTIME=0 PINTOOL="complete" PIN_FLAGS="-s 32" ./run.sh
-	mv run.log complete.log
-	
-	echo "### Executing pruned pintool ###"
-	COMPILE=0 EXEC=1 PIN=1 RUNTIME=0  PINTOOL="pruned" PIN_FLAGS="-s 32" ./run.sh
-	mv run.log pruned.log
+	COMPILE=0 EXEC=1 PIN=1 RUNTIME=0 PINTOOL="<pintool_placeholder>" PIN_FLAGS="-s 32" ./run.sh
 }
 
 init
