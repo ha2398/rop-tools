@@ -444,7 +444,7 @@ bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 		TLBCounter++;
 		ADDRINT target = getCallTarget(ctxt, addr, dump);
 
-		if ((TLBCounter % 200) == 0) { // TLB miss rate = 0.5%
+		if ((TLBCounter % 200000) == 0) { // TLB miss rate = 0.0005%
 			TLBCounter = 0;
 
 			bool targetIsExecutable = isAddrExecutable(target);
