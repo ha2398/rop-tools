@@ -1,4 +1,4 @@
-bnc_name="CrystalMK" ;
+bnc_name="CrystalMk" ;
 lnk_name="$bnc_name.rbc" ;
 prf_name="$bnc_name.ibc" ;
 obj_name="$bnc_name.o" ;

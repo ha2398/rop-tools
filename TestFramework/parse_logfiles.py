@@ -83,7 +83,8 @@ def parse_logs():
                             current_weight = value
                         else:
                             cur_dict[current_bench][event] = (current_weight, \
-                                    value + '(+-' + stdev + ')')
+                                    value)
+                            #        value + '(+-' + stdev + ')')
 
                 line = logfile.readline()
     
@@ -113,7 +114,7 @@ def print_results(benchs):
 
         groups = [group1, group2, group3]
 
-        for bench in benchs:
+        for bench in sorted(benchs):
             output_file.write(bench)
 
             # Pruned pintool

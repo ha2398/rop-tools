@@ -1,4 +1,4 @@
-bnc_name="g721" ;
+bnc_name="jpeg-6a" ;
 lnk_name="$bnc_name.rbc" ;
 prf_name="$bnc_name.ibc" ;
 obj_name="$bnc_name.o" ;

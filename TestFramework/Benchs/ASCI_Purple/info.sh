@@ -1,4 +1,4 @@
-bnc_name="smg2000" ;
+bnc_name="ASCI_Purple" ;
 lnk_name="$bnc_name.rbc" ;
 prf_name="$bnc_name.ibc" ;
 obj_name="$bnc_name.o" ;
