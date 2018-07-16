@@ -17,12 +17,15 @@
 using namespace std;
 
 // Get the output file name from the command line.
-KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o", \
+KNOB<string> outFileKnob(KNOB_MODE_WRITEONCE, "pintool", "o",
 	"vcalls_out.log", "Output file name");
 
 // Get the number of entries on each LBR.
 KNOB<unsigned int> lbrSizeKnob(KNOB_MODE_WRITEONCE, "pintool", "s",
 	"32", "Number of entries on each LBR");
+
+KNOB<double> TLBmissRateKnob(KNOB_MODE_WRITEONCE, "pintool", "m",
+	"0.5", "TLB Miss Rate in percentage");
 
 /**
  * LBR (Last Branch Record) data structure.
@@ -81,6 +84,7 @@ public:
  
 static ofstream outputFile; // Output file
 LBR callLBR(lbrSizeKnob.Value()); // CALL LBR
+int TLBmissInterval;
  
 enum callOpcode {
 	opE8 = 0, op9A, opFF
@@ -446,7 +450,7 @@ bool isCallValid(const CONTEXT *ctxt, ADDRINT addr, string dump) {
 		TLBCounter++;
 		ADDRINT target = getCallTarget(ctxt, addr, dump);
 
-		if ((TLBCounter % 200000) == 0) { // TLB miss rate = 0.0005%
+		if ((TLBCounter % TLBmissInterval) == 0) { // TLB miss rate
 			TLBCounter = 0;
 
 			bool targetIsExecutable = isAddrExecutable(target);
@@ -740,9 +744,10 @@ int main(int argc, char *argv[])
 		return -1;
     }
 	
-	// Open the output file.
+    // Open the output file.
     outputFile.open(outFileKnob.Value().c_str());
-
+    TLBmissInterval = (int) (1 / (TLBmissRateKnob.Value()/100));
+    
     TRACE_AddInstrumentFunction(InstrumentCode, 0);
     PIN_AddFiniFunction(Fini, 0);
     PIN_StartProgram();
