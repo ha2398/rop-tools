@@ -5,12 +5,11 @@ PRUNED_FILE="$BASEDIR/pruned.log"
 BENCHS_FILE="$BASEDIR/benchs.log"
 
 BENCH_CMDS_FILE="run_bench.txt"
-BENCH_CMDS_FILE2="run_bench2.txt"
 PRUNED_CMDS_FILE="run_pruned.txt"
 COMPLETE_CMDS_FILE="run_complete.txt"
 CMDS_FILE="cmds.txt"
 
-rm -rf $BENCH_CMDS_FILE $BENCH_CMDS_FILE2 $PRUNED_CMDS_FILE $COMPLETE_CMDS_FILE
+rm -rf $BENCH_CMDS_FILE $PRUNED_CMDS_FILE $COMPLETE_CMDS_FILE
 #remove logs
 rm -rf $COMPLETE_FILE $PRUNED_FILE $BENCHS_FILE $CMDS_FILE
 
@@ -35,7 +34,7 @@ while read -r LINE; do
 	# Grouping 5
 	EVENTS="instructions,cpu-clock,r8888,r8889"
 	echo "$cd_cmd && perf stat -r $REPEAT -o $BENCHS_FILE --append" \
-	     " -e $EVENTS $bench_cmd" >> $BASEDIR/$BENCH_CMDS_FILE2
+	     " -e $EVENTS $bench_cmd" >> $BASEDIR/$BENCH_CMDS_FILE
 
 	# Grouping 2
 	EVENTS="instructions,iTLB-load-misses,r8488,r8489"
@@ -53,9 +52,8 @@ while read -r LINE; do
 	     " -e $EVENTS $bench_cmd" >> $BASEDIR/$BENCH_CMDS_FILE
 done < run.txt
 
-cat $BENCH_CMDS_FILE2 $PRUNED_CMDS_FILE $COMPLETE_CMDS_FILE $BENCH_CMDS_FILE > $CMDS_FILE
-
 if [[ $EXEC -eq 1 ]]; then
   echo 'STARTING EXECUTION' ;
+  cat $PRUNED_CMDS_FILE $COMPLETE_CMDS_FILE $BENCH_CMDS_FILE > $CMDS_FILE
   parallel -j $JOBS < $CMDS_FILE > parallel.out ;
 fi

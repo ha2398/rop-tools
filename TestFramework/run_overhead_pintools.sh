@@ -1,7 +1,6 @@
 #!/bin/bash
 
 MEM_LIMIT=2500000
-PIN=1
 PIN_PATH=$HOME/pin-3.4
 PINTOOLS_PATH=$PIN_PATH/source/tools/SimpleExamples
 
@@ -28,6 +27,7 @@ function compile_pintools() {
 }
 
 function run_pintools() {
+	echo "### Running Pintools ###"
 	COMPILE=0 EXEC=1 PIN=1 PINTOOL="<pintool_placeholder>" PIN_FLAGS="-s 32 -m 0.0005" ./run.sh
 }
 
