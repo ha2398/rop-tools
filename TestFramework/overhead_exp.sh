@@ -14,8 +14,6 @@ rm -rf $BENCH_CMDS_FILE $BENCH_CMDS_FILE2 $PRUNED_CMDS_FILE $COMPLETE_CMDS_FILE
 #remove logs
 rm -rf $COMPLETE_FILE $PRUNED_FILE $BENCHS_FILE $CMDS_FILE
 
-RUNTIME=6h
-
 while read -r LINE; do
 	IFS="&&" read -ra cmds <<< "$LINE"
 	cd_cmd=${cmds[0]}
@@ -57,4 +55,7 @@ done < run.txt
 
 cat $BENCH_CMDS_FILE2 $PRUNED_CMDS_FILE $COMPLETE_CMDS_FILE $BENCH_CMDS_FILE > $CMDS_FILE
 
-parallel -j $JOBS < $CMDS_FILE > parallel.out
+if [[ $EXEC -eq 1 ]]; then
+  echo 'STARTING EXECUTION' ;
+  parallel -j $JOBS < $CMDS_FILE > parallel.out ;
+fi
