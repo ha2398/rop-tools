@@ -24,6 +24,9 @@ def parse_pintools_outputs(benchs):
 
         for pintool in pintools:
                 for bench in benchs:
+                    if bench not in dicts[pintool]:
+                        outputs[pintool][bench] = ('', '')
+                    else:
                         logfile = open('overhead_outputs/' + pintool + '/' + bench + \
                                 '.log', 'r')
                         
@@ -31,8 +34,12 @@ def parse_pintools_outputs(benchs):
                         insts = line.strip().split(':')[1]
                         line = logfile.readline()
                         rets = line.strip().split(':')[1]
-
-                        outputs[pintool][bench] = (insts, rets)
+                        
+                        if insts.isalnum() and rets.isalnum():                        
+                            outputs[pintool][bench] = (insts, rets)
+                        else:
+                            outputs[pintool][bench] = ('', '')
+                        
                         logfile.close()
 
         return outputs
@@ -68,7 +75,7 @@ def parse_logs():
                         cur_dict[current_bench] = {}
                 else:
                     args = line.split()
-                    if len(args) == 6 or len(args) == 7 or len(args) == 2: # event report
+                    if len(args) == 6 or len(args) == 7 or len(args) == 2 or len(args) == 3: # event report
                         value = args[0].replace(',', '')
                         event = args[1]
 
@@ -87,11 +94,27 @@ def parse_logs():
                             #        value + '(+-' + stdev + ')')
 
                 line = logfile.readline()
-    
-            
 
             logfile.close()
 
+
+def get_value(d, bench, event, i=None):
+    if bench in d:
+        if event in d[bench]:
+            if i is not None:
+                if d[bench][event][i] is None:
+                    return ''
+                else:
+                    return d[bench][event][i]
+            else:
+                if d[bench][event] is None:
+                    return ''
+                else:
+                    return d[bench][event]
+        else:
+            return ''
+    else:
+        return ''
 
 def print_results(benchs):
         '''
@@ -100,46 +123,49 @@ def print_results(benchs):
                 @benchs: (string list) List with the benchmark names.
         '''
 
-        output_file = open('output.log', 'w')
+        output_file = open('output.csv', 'w')
 
         output_file.write('Bench,INSTs (Pin),RETs (Pin),Instructions (perf)')
         output_file.write(',cpu-clock,r8888,INSTs (Pin),RETs (Pin)')
         output_file.write(',Instructions (perf),cpu-clock,r8888,INSTs')
+        output_file.write(',cpu-clock,r8888,r8889,INSTs')
         output_file.write(',iTLB-load-misses,r8488,r8489,INSTs,r8888,r8889')
         output_file.write(',ra088,INSTs,ra089\n')
 
         group1 = ['iTLB-load-misses', 'r8488', 'r8489']
         group2 = ['r8888', 'r8889', 'ra088']
         group3 = ['ra089']
+        group4 = ['cpu-clock', 'r8888', 'r8889']
 
-        groups = [group1, group2, group3]
+        groups = [group4, group1, group2, group3]
 
         for bench in sorted(benchs):
             output_file.write(bench)
 
             # Pruned pintool
-            values = pintool_outputs['pruned'][bench]
+            values = get_value(pintool_outputs, 'pruned', bench)
             output_file.write(',' + values[0] + ',' + values[1])
-            inst = pruned_events[bench]['cpu-clock'][0]
-            cpu_clock = pruned_events[bench]['cpu-clock'][1]
-            r8888 = pruned_events[bench]['r8888'][1]
+            inst = get_value(pruned_events, bench, 'cpu-clock', 0)
+            cpu_clock = get_value(pruned_events, bench, 'cpu-clock', 1)
+            r8888 = get_value(pruned_events, bench, 'r8888', 1)
             output_file.write(',' + inst + ',' + cpu_clock + ',' + r8888) 
 
             # Complete pintool
-            values = pintool_outputs['complete'][bench]
+            values = get_value(pintool_outputs, 'complete', bench)
             output_file.write(',' + values[0] + ',' + values[1])
-            inst = complete_events[bench]['cpu-clock'][0]
-            cpu_clock = complete_events[bench]['cpu-clock'][1]
-            r8888 = complete_events[bench]['r8888'][1]
+            inst = get_value(complete_events, bench, 'cpu-clock', 0)
+            cpu_clock = get_value(complete_events, bench, 'cpu-clock', 1)
+            r8888 = get_value(complete_events, bench, 'r8888', 1)
             output_file.write(',' + inst + ',' + cpu_clock + ',' + r8888)
 
             # No instrumentation
             for group in groups:
-                inst = bench_events[bench][group[0]][0]
+                first_event = group[0]
+                inst = get_value(bench_events, bench, first_event, 0)
                 output_file.write(',' + inst)
 
                 for event in group:
-                    value = bench_events[bench][event][1]
+                    value = get_value(bench_events, bench, event, 1)
                     output_file.write(',' + value)
 
             output_file.write('\n')
@@ -150,7 +176,7 @@ def print_results(benchs):
 def main():
         global pintool_outputs
         parse_logs()
-        benchs = [x for x in complete_events]
+        benchs = [x for x in bench_events]
         pintool_outputs = parse_pintools_outputs(benchs)
         print_results(benchs)
 
