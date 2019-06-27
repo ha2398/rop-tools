@@ -13,5 +13,5 @@ exe_name="$bnc_name.exe" ;
 
 # source_files=($(ls *.c)) ;
 # CXXFLAGS=" -lm " ;
-COMPILER=clang++
+COMPILER=g++-9
 RUN_OPTIONS=" --input ../data/all/input/namd.input --iterations 38 --output namd.out " ;

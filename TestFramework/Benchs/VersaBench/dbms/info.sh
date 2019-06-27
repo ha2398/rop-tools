@@ -5,7 +5,7 @@ obj_name="$bnc_name.o" ;
 exe_name="$bnc_name.exe" ;
 
 source_files=($(ls *.c)) ;
-CXXFLAGS="" ;
+CXXFLAGS="-lm" ;
 
 PROJ_SRC_DIR=$(pwd) ;
 if [[ -n $SMALL_PROBLEM_SIZE ]]; then

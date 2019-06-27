@@ -28,7 +28,7 @@ fi
 # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- 
 
 # LLVM_PATH  => The place where I have all the LLVM tools
-LLVM_PATH="$HOME/llvm38/build/Debug+Asserts/bin"
+LLVM_PATH="/usr/lib/llvm-7/build/Debug+Asserts/bin"
 
 # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- 
 
@@ -39,12 +39,10 @@ LLVM_PATH="$HOME/llvm38/build/Debug+Asserts/bin"
 
 if [[ $PIN -eq 1 ]]; then
   # PIN_PATH   => The place where I keep the pin source code
-  PIN_PATH="$HOME/pin-3.4"
+  PIN_PATH=$HOME/pin-3.7-gcc-linux
   PIN_LIB="$PIN_PATH/source/tools/SimpleExamples"
 
   echo "PIN_PATH is set to $PIN_PATH"
-
-  cp ../Pintools/Overhead/complete.cpp ../Pintools/Overhead/pruned.cpp $PIN_PATH/source/tools/SimpleExamples
 fi
 
 # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- # -- 

@@ -5,7 +5,7 @@ obj_name="$bnc_name.o" ;
 exe_name="$bnc_name.exe" ;
 
 source_files=( "tramp3d-v4.cpp" ) ;
-COMPILER=clang++
+COMPILER=g++-9
 CXXFLAGS=" -lm -fno-exceptions -lstdc++ " ;
 
 if [[ -n $LARGE_PROBLEM_SIZE ]]; then

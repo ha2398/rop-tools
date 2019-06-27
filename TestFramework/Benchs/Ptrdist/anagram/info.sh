@@ -7,4 +7,4 @@ exe_name="$bnc_name.exe" ;
 source_files=("anagram.c") ;
 CXXFLAGS=" -lm -D_POSIX_SOURCE -DHYPRE_TIMING -DHYPRE_SEQUENTIAL " ;
 RUN_OPTIONS=" words 2 " ;
-STDIN="input.OUT"
+STDIN="input.in"

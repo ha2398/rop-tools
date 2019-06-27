@@ -6,7 +6,7 @@ exe_name="$bnc_name.exe" ;
 
 source_files=($(ls *.cpp)) ;
 CXXFLAGS=" -DNOASM -DLLVM -lstdc++ -lm " ;
-COMPILER=clang++ ;
+COMPILER=g++-9 ;
 
 if [[ $LARGE_PROBLEM_SIZE ]]; then
   RUN_OPTIONS=" -4 file1.in " ;

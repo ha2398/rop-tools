@@ -5,5 +5,5 @@ obj_name="$bnc_name.o" ;
 exe_name="$bnc_name.exe" ;
 
 source_files=("emfloat.c" "misc.c" "nbench0.c" "nbench1.c" "sysspec.c") ;
-CXXFLAGS="-DBASE_ITERATIONS=25" ;
+CXXFLAGS="-lm -DBASE_ITERATIONS=25" ;
 RUN_OPTIONS="" ;

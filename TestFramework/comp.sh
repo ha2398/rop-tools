@@ -24,6 +24,4 @@ function compile() {
   
   # Compile our instrumented file, in IR format, to x86:
   $LLVM_PATH/llc -filetype=obj $prf_name -o $obj_name ;
-  $LLVM_PATH/$COMPILER -lm $obj_name -o $exe_name ;
-
 }
