@@ -1,182 +1,160 @@
 #!/usr/bin/env python3
 
-bench_events = {}
 complete_events = {}
 pruned_events = {}
 pintool_outputs = {}
 
-dicts = {'benchs': bench_events,
-         'complete': complete_events,
+dicts = {'complete': complete_events,
          'pruned': pruned_events}
 
+separator = '\t'
+
 def parse_pintools_outputs(benchs):
-        '''
-                Read the outputs produced by the pintools.
+    '''
+        Read the outputs produced by the pintools.
 
-                @benchs: List of benchmarks.
+        @benchs: List of benchmarks.
+        @return: One dictionary with format
+                (pintool -> (benchmark -> (Indirect branches or calls,Followed by ENDBR64))).
+    '''
 
-                @return: One dictionary with format
-                        (pintool -> (benchmark -> (instructions, RET instructions))).
-        '''
+    pintools = ['complete', 'pruned']
+    pintools_names = {'complete': 'count_endbr64', 'pruned': 'count_endbr64_pruned'}
+    outputs = {p: {} for p in pintools}
 
-        pintools = ['complete', 'pruned']
-        outputs = {'complete': {}, 'pruned': {}}
-
-        for pintool in pintools:
-                for bench in benchs:
-                    if bench not in dicts[pintool]:
-                        outputs[pintool][bench] = ('', '')
+    for pintool in pintools:
+            for bench in benchs:
+                if bench not in dicts[pintool]:
+                    outputs[pintool][bench] = ('', '')
+                else:
+                    logfile = open('endbr64_results/' + pintools_names[pintool] + '/' + bench + \
+                            '.log', 'r')
+                    
+                    logfile.readline()
+                    line = logfile.readline()
+                    results = line.split(' ')[0].split(',')
+                    branches = results[0]
+                    endbr64_branches = results[1]
+                    
+                    if branches.isalnum() and endbr64_branches.isalnum():                        
+                        outputs[pintool][bench] = (branches, endbr64_branches)
                     else:
-                        logfile = open('overhead_outputs/' + pintool + '/' + bench + \
-                                '.log', 'r')
-                        
-                        line = logfile.readline()
-                        insts = line.strip().split(':')[1]
-                        line = logfile.readline()
-                        rets = line.strip().split(':')[1]
-                        
-                        if insts.isalnum() and rets.isalnum():                        
-                            outputs[pintool][bench] = (insts, rets)
-                        else:
-                            outputs[pintool][bench] = ('', '')
-                        
-                        logfile.close()
+                        outputs[pintool][bench] = ('', '')
+                    
+                    logfile.close()
 
-        return outputs
+    return outputs
+
+
+def is_event_report(args):
+    '''
+        Checks whether a line in a perf output file is an event report.
+
+        @args: the split line to be checked.
+        @return: true iff the line is an event report.
+    '''
+
+    acceptedNumArgs = [2, 5, 6, 7, 9, 11]
+    return len(args) in acceptedNumArgs
 
 
 def parse_logs():
-        '''
-                Parse the logfiles, retrieving event counting for the complete and
-                pruned Pintools and for the benchmarks without Pin.
+    '''
+        Parse the logfiles, retrieving event counting for the complete and
+        pruned Pintools.
+    '''
+    
+    global dicts
+    files = ['complete', 'pruned']
 
-                This function changes the global dictionaries:
-                    complete_events
-                    pruned_events
-                    bench_events
-        '''
-        
-        global dicts
+    for f in files:
+        logfile = open(f + '.log', 'r')
+        cur_dict = dicts[f]
 
-        files = ['complete', 'pruned', 'benchs']
+        line = logfile.readline()
+        current_insts = 0
+        current_cpu = 0
+        while line:
+            if 'Performance' in line:
+                args = line.split()
+                current_bench = list(filter(lambda x: 'exe' in x, args))[0]
+                current_bench = current_bench.split('.')[1].strip('/')
 
-        for f in files:
-            logfile = open(f + '.log', 'r')
-            cur_dict = dicts[f]
+                if current_bench not in cur_dict:
+                    cur_dict[current_bench] = {}
+            else:
+                args = line.split()
+                length = len(args)
+
+                if is_event_report(args): # event report
+                    value = args[0].replace('.', '')
+                    event = args[1]
+
+                    # if '(' in line:
+                    #     stdev = args[length - 2]
+                    # else:
+                    #     stdev = '0.00%'
+
+                    if 'instructions' in event:
+                        current_insts = value
+                    elif 'cpu-clock' in event:
+                        current_cpu = value
+                    else:
+                        cur_dict[current_bench][event] = (current_insts, current_cpu, value)
 
             line = logfile.readline()
-            while line:
-                if 'Performance' in line:
-                    args = line.split()
-                    current_bench = list(filter(lambda x: 'exe' in x, args))[0]
-                    current_bench = current_bench.split('.')[1].strip('/')
 
-                    if current_bench not in cur_dict:
-                        cur_dict[current_bench] = {}
-                else:
-                    args = line.split()
-                    if len(args) == 6 or len(args) == 7 or len(args) == 2 or len(args) == 3: # event report
-                        value = args[0].replace(',', '')
-                        event = args[1]
+        logfile.close()
 
-                        if len(args) == 6:
-                            stdev = args[4]
-                        elif len(args) == 7:
-                            stdev = args[5]
-                        else:
-                            stdev = '0.00%'
-
-                        if event == 'instructions':
-                            current_weight = value
-                        else:
-                            cur_dict[current_bench][event] = (current_weight, \
-                                    value)
-                            #        value + '(+-' + stdev + ')')
-
-                line = logfile.readline()
-
-            logfile.close()
-
-
-def get_value(d, bench, event, i=None):
-    if bench in d:
-        if event in d[bench]:
-            if i is not None:
-                if d[bench][event][i] is None:
-                    return ''
-                else:
-                    return d[bench][event][i]
-            else:
-                if d[bench][event] is None:
-                    return ''
-                else:
-                    return d[bench][event]
-        else:
-            return ''
-    else:
-        return ''
 
 def print_results(benchs):
-        '''
-                Dump runtime results to file.
+    '''
+        Dump runtime results to file.
 
-                @benchs: (string list) List with the benchmark names.
-        '''
+        @benchs: (string list) List with the benchmark names.
+    '''
 
-        output_file = open('output.csv', 'w')
+    output_file = open('output.csv', 'w')
 
-        output_file.write('Bench,INSTs (Pin),RETs (Pin),Instructions (perf)')
-        output_file.write(',cpu-clock,r8888,INSTs (Pin),RETs (Pin)')
-        output_file.write(',Instructions (perf),cpu-clock,r8888,INSTs')
-        output_file.write(',cpu-clock,r8888,r8889,INSTs')
-        output_file.write(',iTLB-load-misses,r8488,r8489,INSTs,r8888,r8889')
-        output_file.write(',ra088,INSTs,ra089\n')
+    group1 = ['instructions:u','cpu-clock:u','r8488:u','r8489:u']
+    group2 = ['instructions:u','cpu-clock:u','ra088:u','ra089:u']
+    events = group1 + group2
+    header = separator.join(events)
 
-        group1 = ['iTLB-load-misses', 'r8488', 'r8489']
-        group2 = ['r8888', 'r8889', 'ra088']
-        group3 = ['ra089']
-        group4 = ['cpu-clock', 'r8888', 'r8889']
+    output_file.write(separator.join(['Bench','Indirect branches or calls','Followed by ENDBR64']))
+    # Events are printed in the following order: pruned, complete
+    output_file.write('{}{}{}{}\n'.format(separator, header, separator, header))
 
-        groups = [group4, group1, group2, group3]
+    groupings = [group1[2:], group2[2:]]
 
-        for bench in sorted(benchs):
-            output_file.write(bench)
+    for bench in sorted(benchs):
+        output_file.write(bench)
 
-            # Pruned pintool
-            values = get_value(pintool_outputs, 'pruned', bench)
-            output_file.write(',' + values[0] + ',' + values[1])
-            inst = get_value(pruned_events, bench, 'cpu-clock', 0)
-            cpu_clock = get_value(pruned_events, bench, 'cpu-clock', 1)
-            r8888 = get_value(pruned_events, bench, 'r8888', 1)
-            output_file.write(',' + inst + ',' + cpu_clock + ',' + r8888) 
+        # Pintool logs (only complete Pintool)
+        values = pintool_outputs['complete'][bench]
+        output_file.write('{}{}{}{}'.format(separator, values[0], separator, values[1]))
 
-            # Complete pintool
-            values = get_value(pintool_outputs, 'complete', bench)
-            output_file.write(',' + values[0] + ',' + values[1])
-            inst = get_value(complete_events, bench, 'cpu-clock', 0)
-            cpu_clock = get_value(complete_events, bench, 'cpu-clock', 1)
-            r8888 = get_value(complete_events, bench, 'r8888', 1)
-            output_file.write(',' + inst + ',' + cpu_clock + ',' + r8888)
+        # Pintool perf events
+        for results in [pruned_events, complete_events]:
+            for grouping in groupings:
+                instructions = results[bench][grouping[0]][0]
+                output_file.write('{}{}'.format(separator, instructions))
+                cpu = results[bench][grouping[0]][1]
+                output_file.write('{}{}'.format(separator, cpu))
 
-            # No instrumentation
-            for group in groups:
-                first_event = group[0]
-                inst = get_value(bench_events, bench, first_event, 0)
-                output_file.write(',' + inst)
+                for event in grouping:
+                    value = results[bench][event][2]
+                    output_file.write('{}{}'.format(separator, value))
 
-                for event in group:
-                    value = get_value(bench_events, bench, event, 1)
-                    output_file.write(',' + value)
+        output_file.write('\n')
 
-            output_file.write('\n')
-
-        output_file.close()
+    output_file.close()
                
 
 def main():
         global pintool_outputs
         parse_logs()
-        benchs = [x for x in bench_events]
+        benchs = list(pruned_events.keys())
         pintool_outputs = parse_pintools_outputs(benchs)
         print_results(benchs)
 
