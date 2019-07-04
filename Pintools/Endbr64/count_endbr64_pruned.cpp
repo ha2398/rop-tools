@@ -76,7 +76,7 @@ int main (int argc, char *argv[]) {
 	}
 
 	// Open output file.
-	outputFile.open(outFileKnob.Value().c_str());
+	outputFile.open(outFileKnob.Value().c_str(), ios_base::app);
 
 	TRACE_AddInstrumentFunction(InstrumentCode, NULL);
 	PIN_AddFiniFunction(Fini, 0);
